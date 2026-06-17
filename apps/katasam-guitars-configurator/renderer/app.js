@@ -461,6 +461,139 @@ window.getFlashingFirmware = function() {
   return isFlashingFirmware;
 };
 let originalConfig = null;
+
+// Temporary default sets for the Config JSON editor.
+// V2 values are from the provided Pi Zero config sample.
+const CONFIG_EDITOR_DEFAULT_V1 = {
+  "device_name": "TEST CONFIG NAME",
+  "_metadata": {
+    "version": "3.9.26",
+    "description": "KATASAM Guitar Controller Configuration",
+    "lastUpdated": "2025-08-13"
+  },
+  "UP": "GP2",
+  "DOWN": "GP3",
+  "LEFT": "GP4",
+  "RIGHT": "GP5",
+  "GREEN_FRET": "GP10",
+  "GREEN_FRET_led": 6,
+  "RED_FRET": "GP11",
+  "RED_FRET_led": 5,
+  "YELLOW_FRET": "GP12",
+  "YELLOW_FRET_led": 4,
+  "BLUE_FRET": "GP13",
+  "BLUE_FRET_led": 3,
+  "ORANGE_FRET": "GP14",
+  "ORANGE_FRET_led": 2,
+  "STRUM_UP": "GP7",
+  "STRUM_UP_led": 0,
+  "STRUM_DOWN": "GP8",
+  "STRUM_DOWN_led": 1,
+  "TILT": "GP9",
+  "SELECT": "GP0",
+  "START": "GP1",
+  "GUIDE": "GP6",
+  "WHAMMY": "GP27",
+  "neopixel_pin": "GP23",
+  "joystick_x_pin": "GP28",
+  "joystick_y_pin": "GP29",
+  "hat_mode": "dpad",
+  "led_brightness": 1.0,
+  "whammy_min": 500,
+  "whammy_max": 65000,
+  "whammy_reverse": false,
+  "tilt_wave_enabled": true,
+  "led_color": [
+    "#FFFFFF",
+    "#FFFFFF",
+    "#B33E00",
+    "#0000FF",
+    "#FFFF00",
+    "#FF0000",
+    "#00FF00"
+  ],
+  "released_color": [
+    "#454545",
+    "#454545",
+    "#521C00",
+    "#000091",
+    "#696B00",
+    "#8C0009",
+    "#003D00"
+  ]
+};
+
+const CONFIG_EDITOR_DEFAULT_V2 = {
+  "released_color": [[255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0]],
+  "tilt_wave_enabled": true,
+  "joystick_y_pin": "GP27",
+  "STRUM_UP": "GP15",
+  "YELLOW_FRET_led": 4,
+  "BLUE_FRET_led": 3,
+  "START": "GP0",
+  "TILT": "GP12",
+  "whammy_max": 65000,
+  "LEFT": "GP9",
+  "GUIDE": "GP7",
+  "ORANGE_FRET_led": 2,
+  "STRUM_DOWN_led": 1,
+  "UP": "GP11",
+  "WHAMMY": "GP29",
+  "ORANGE_FRET": "GP6",
+  "STRUM_UP_led": 0,
+  "DOWN": "GP10",
+  "BLUE_FRET": "GP5",
+  "RED_FRET_led": 5,
+  "neopixel_pin": "GP13",
+  "hat_mode": "dpad",
+  "RIGHT": "GP8",
+  "RED_FRET": "GP3",
+  "whammy_min": 500,
+  "GREEN_FRET": "GP2",
+  "STRUM_DOWN": "GP14",
+  "joystick_x_pin": "GP26",
+  "YELLOW_FRET": "GP4",
+  "device_name": "Guitar Controller",
+  "_metadata": {
+    "description": "BumbleGum Guitar Controller Configuration",
+    "lastUpdated": "2025-08-13",
+    "version": "3.9.26"
+  },
+  "led_color": [[0, 0, 255], [0, 0, 255], [255, 77, 0], [0, 0, 255], [255, 255, 0], [255, 0, 0], [0, 128, 0]],
+  "led_brightness": 1,
+  "SELECT": "GP1",
+  "GREEN_FRET_led": 6,
+  "whammy_reverse": false
+};
+
+function cloneJsonObject(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function formatEditorValue(value) {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function parseEditorValue(rawValue) {
+  const trimmed = rawValue.trim();
+  if (trimmed === '') return '';
+
+  const shouldParseJson =
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    trimmed === 'true' ||
+    trimmed === 'false' ||
+    trimmed === 'null' ||
+    /^-?\d+(\.\d+)?$/.test(trimmed);
+
+  if (!shouldParseJson) {
+    return rawValue;
+  }
+
+  return JSON.parse(trimmed);
+}
 // Fret index mapping for config <-> UI
 // 0: orange, 1: blue, 2: yellow, 3: red, 4: green
 const fretIndexMap = [2, 3, 4, 5, 6];
@@ -3915,6 +4048,124 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
   document.getElementById('upload-presets-btn')?.addEventListener('click', () => {
     closeConfigMenu();
     document.getElementById('presets-file-input').click();
+  });
+
+  const mainPanel = document.querySelector('.main');
+  const configEditorBtn = document.getElementById('config-editor-btn');
+  const configEditorPage = document.getElementById('config-editor-page');
+  const configEditorFields = document.getElementById('config-editor-fields');
+  const configEditorBackBtn = document.getElementById('config-editor-back-btn');
+  const configEditorApplyBtn = document.getElementById('config-editor-apply-btn');
+  const configEditorV1Btn = document.getElementById('config-editor-v1-btn');
+  const configEditorV2Btn = document.getElementById('config-editor-v2-btn');
+  const configEditorReloadBtn = document.getElementById('config-editor-reload-btn');
+
+  function renderConfigEditor(configObj) {
+    if (!configEditorFields) return;
+    configEditorFields.innerHTML = '';
+
+    Object.entries(configObj).forEach(([key, value]) => {
+      const row = document.createElement('div');
+      row.className = 'config-editor-row';
+
+      const keyEl = document.createElement('div');
+      keyEl.className = 'config-editor-key';
+      keyEl.textContent = key;
+
+      const valueEl = document.createElement('textarea');
+      valueEl.className = 'config-editor-value';
+      valueEl.dataset.key = key;
+      valueEl.value = formatEditorValue(value);
+      valueEl.rows = Array.isArray(value) || (value && typeof value === 'object') ? 3 : 1;
+
+      row.appendChild(keyEl);
+      row.appendChild(valueEl);
+      configEditorFields.appendChild(row);
+    });
+  }
+
+  function readConfigFromEditor() {
+    const nextConfig = {};
+    const errors = [];
+
+    if (!configEditorFields) {
+      return { nextConfig, errors };
+    }
+
+    const allInputs = configEditorFields.querySelectorAll('.config-editor-value');
+    allInputs.forEach(inputEl => {
+      const key = inputEl.dataset.key;
+      const rawValue = inputEl.value;
+      try {
+        nextConfig[key] = parseEditorValue(rawValue);
+      } catch (err) {
+        errors.push(`${key}: ${err.message}`);
+      }
+    });
+
+    return { nextConfig, errors };
+  }
+
+  function showConfigEditor(configObj) {
+    if (!mainPanel || !configEditorPage) return;
+    renderConfigEditor(configObj);
+    mainPanel.classList.add('config-editor-active');
+    configEditorPage.style.display = 'flex';
+  }
+
+  function hideConfigEditor() {
+    if (!mainPanel || !configEditorPage) return;
+    mainPanel.classList.remove('config-editor-active');
+    configEditorPage.style.display = 'none';
+  }
+
+  configEditorBtn?.addEventListener('click', () => {
+    closeConfigMenu();
+    const sourceConfig = originalConfig ? cloneJsonObject(originalConfig) : cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1);
+    showConfigEditor(sourceConfig);
+  });
+
+  configEditorBackBtn?.addEventListener('click', () => {
+    hideConfigEditor();
+  });
+
+  configEditorReloadBtn?.addEventListener('click', () => {
+    const sourceConfig = originalConfig ? cloneJsonObject(originalConfig) : cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1);
+    showConfigEditor(sourceConfig);
+    showToast('Editor reloaded from current config', 'info');
+  });
+
+  configEditorV1Btn?.addEventListener('click', () => {
+    showConfigEditor(cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1));
+    showToast('Loaded V1 defaults in editor', 'info');
+  });
+
+  configEditorV2Btn?.addEventListener('click', () => {
+    showConfigEditor(cloneJsonObject(CONFIG_EDITOR_DEFAULT_V2));
+    showToast('Loaded V2 defaults in editor', 'info');
+  });
+
+  configEditorApplyBtn?.addEventListener('click', async () => {
+    const { nextConfig, errors } = readConfigFromEditor();
+
+    if (errors.length > 0) {
+      await customAlert(`Failed to parse one or more fields:\n\n${errors.join('\n')}`);
+      return;
+    }
+
+    originalConfig = cloneJsonObject(nextConfig);
+    window.originalConfig = cloneJsonObject(nextConfig);
+
+    if (typeof applyConfig === 'function') {
+      applyConfig(originalConfig);
+    }
+
+    configDirty = true;
+    const applyBtn = document.getElementById('apply-config-btn');
+    if (applyBtn) applyBtn.style.display = 'inline-block';
+
+    showToast('Config editor changes applied to session. Use Apply To Config to write device file.', 'success');
+    hideConfigEditor();
   });
 
   document.getElementById('presets-file-input')?.addEventListener('change', async (e) => {

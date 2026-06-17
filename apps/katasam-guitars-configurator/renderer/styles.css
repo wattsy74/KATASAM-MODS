@@ -187,6 +187,17 @@ html, body {
   padding: 10px;
 }
 
+.main.config-editor-active {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main.config-editor-active .left-panel,
+.main.config-editor-active .picker-panel {
+  display: none;
+}
+
 .left-panel {
   flex: 2;
   display: flex;
@@ -207,6 +218,95 @@ html, body {
   border: 1px solid #30343A;
   border-radius: 10px;
   padding: 10px;
+}
+
+.config-editor-page {
+  height: 100%;
+  min-height: 0;
+  display: none;
+  flex-direction: column;
+  background: #1B1C1F;
+  border: 1px solid #30343A;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.main.config-editor-active .config-editor-page {
+  display: flex;
+}
+
+.config-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.config-editor-header h3 {
+  margin: 0;
+  color: #28D0AF;
+}
+
+.config-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.config-editor-help {
+  margin: 0 0 10px 0;
+  color: #cccccc;
+  font-size: 13px;
+}
+
+.config-editor-fields {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid #30343A;
+  border-radius: 8px;
+  background: #151619;
+  padding: 10px;
+}
+
+.config-editor-row {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2d33;
+}
+
+.config-editor-row:last-child {
+  border-bottom: none;
+}
+
+.config-editor-key {
+  color: #d6d6d6;
+  font-weight: 600;
+  padding-top: 8px;
+  word-break: break-word;
+}
+
+.config-editor-value {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  padding: 8px;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  resize: vertical;
+  min-height: 34px;
+}
+
+.config-editor-value:focus {
+  outline: none;
+  border-color: #28D0AF;
 }
 
 .picker-area {
