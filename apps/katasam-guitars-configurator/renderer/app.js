@@ -1952,7 +1952,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.lineTo(x, barY + barHeight / 2);
       ctx.stroke();
       // Draw handle
-      ctx.fillStyle = draggingBar === label ? '#ffe066' : '#bfa500';
+      ctx.fillStyle = draggingBar === label ? '#5DE3CB' : '#bfa500';
       ctx.beginPath();
       ctx.arc(x, barY, 10, 0, 2 * Math.PI);
       ctx.fill();
@@ -2158,7 +2158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     whammyAutoCalBtn.disabled = true;
     whammyAutoCalBtn.textContent = "Calibrating...";
     whammyAutoCalStatus.textContent = "Step 1: Keep whammy at rest position for 3 seconds";
-    whammyAutoCalStatus.style.color = "#ffe066";
+    whammyAutoCalStatus.style.color = "#5DE3CB";
     
     // Start collecting samples
     autoCalInterval = setInterval(collectAutoCalSample, 100);
@@ -4574,8 +4574,8 @@ if (window.multiDeviceManager) {
       const pinCell = `<td style="text-align:center;vertical-align:middle;padding:6px;border:1px solid #444;">
         <div style="display:flex;flex-direction:row;align-items:center;justify-content:center;gap:4px;">
           <input type="text" class="pin-input" data-key="${input.key}" value="${pin}" style="width:50px;text-align:center;padding:3px 5px;font-size:0.8em;border-radius:3px;border:1px solid #ccc;background:#fff;" />
-          <button class="discover-btn" data-key="${input.key}" style="padding:3px 6px;font-size:0.75em;border-radius:3px;border:none;background:#444;color:#ffcc00;cursor:pointer;transition:background 0.2s;">Detect</button>
-          <span class="pin-status-box" data-key="${input.key}" style="display:inline-block;width:14px;height:14px;border-radius:2px;border:1px solid #ffe066;background:#111;margin-left:3px;vertical-align:middle;"></span>
+          <button class="discover-btn" data-key="${input.key}" style="padding:3px 6px;font-size:0.75em;border-radius:3px;border:none;background:#444;color:#28D0AF;cursor:pointer;transition:background 0.2s;">Detect</button>
+          <span class="pin-status-box" data-key="${input.key}" style="display:inline-block;width:14px;height:14px;border-radius:2px;border:1px solid #5DE3CB;background:#111;margin-left:3px;vertical-align:middle;"></span>
         </div>
       </td>`;
       
@@ -4753,9 +4753,9 @@ if (window.multiDeviceManager) {
           modalApplyBtn.style.boxShadow = 'none';
           modalApplyBtn.style.cursor = 'not-allowed';
         } else {
-          modalApplyBtn.style.background = '#ffcc00';
+          modalApplyBtn.style.background = '#28D0AF';
           modalApplyBtn.style.color = '#000';
-          modalApplyBtn.style.boxShadow = '0 0 8px #ffe066';
+          modalApplyBtn.style.boxShadow = '0 0 8px #5DE3CB';
           modalApplyBtn.style.cursor = 'pointer';
         }
       }
@@ -4862,12 +4862,12 @@ if (window.multiDeviceManager) {
         console.log(`Looking for box with key: ${key}, status: ${status}, found box:`, box);
         if (box) {
           if (status === '1') {
-            box.style.background = '#ffe066';
-            box.style.borderColor = '#ffe066';
+            box.style.background = '#5DE3CB';
+            box.style.borderColor = '#5DE3CB';
             console.log(`Set ${key} box to pressed (yellow)`);
           } else if (status === '0') {
             box.style.background = '#111';
-            box.style.borderColor = '#ffe066';
+            box.style.borderColor = '#5DE3CB';
             console.log(`Set ${key} box to not pressed (dark)`);
           } else {
             box.style.background = '#333';
@@ -5026,7 +5026,7 @@ if (window.multiDeviceManager) {
         width: 65px;
         height: 45px;
         background: #111;
-        border: 2px solid #ffe066;
+        border: 2px solid #5DE3CB;
         border-radius: 8px;
         display: flex;
         flex-direction: column;
@@ -5034,7 +5034,7 @@ if (window.multiDeviceManager) {
         align-items: center;
         font-size: 10px;
         font-weight: bold;
-        color: #ffe066;
+        color: #5DE3CB;
         text-align: center;
         transition: all 0.1s ease;
       `;
@@ -5051,7 +5051,7 @@ if (window.multiDeviceManager) {
         width: 65px;
         height: 45px;
         background: #111;
-        border: 2px solid #ffe066;
+        border: 2px solid #5DE3CB;
         border-radius: 8px;
         display: flex;
         flex-direction: column;
@@ -5059,7 +5059,7 @@ if (window.multiDeviceManager) {
         align-items: center;
         font-size: 10px;
         font-weight: bold;
-        color: #ffe066;
+        color: #5DE3CB;
         text-align: center;
         transition: all 0.1s ease;
       `;
@@ -5160,7 +5160,7 @@ if (window.multiDeviceManager) {
     sliderContainer.style.width = '140px';
     sliderContainer.style.height = '8px';
     sliderContainer.style.background = '#111';
-    sliderContainer.style.border = '2px solid #ffe066';
+    sliderContainer.style.border = '2px solid #5DE3CB';
     sliderContainer.style.borderRadius = '6px';
     sliderContainer.style.position = 'relative';
     sliderContainer.style.margin = '12px auto 8px auto';
@@ -5170,7 +5170,7 @@ if (window.multiDeviceManager) {
     whammySlider.id = 'diag-whammy-slider';
     whammySlider.style.width = '6px';
     whammySlider.style.height = '6px';
-    whammySlider.style.background = '#ffe066';
+    whammySlider.style.background = '#5DE3CB';
     whammySlider.style.borderRadius = '50%';
     whammySlider.style.position = 'absolute';
     whammySlider.style.top = '50%';
@@ -5289,7 +5289,7 @@ if (window.multiDeviceManager) {
         titleElement.style.margin = '0 0 8px 0';
         titleElement.style.fontSize = '1.1em';
         titleElement.style.fontWeight = 'bold';
-        titleElement.style.color = '#ffe066';
+        titleElement.style.color = '#5DE3CB';
         diagHatStatus.insertBefore(titleElement, diagHatStatus.firstChild);
       }
       titleElement.textContent = hatMode === 'dpad' ? 'D-Pad Status' : 'Joystick Status';
@@ -5336,8 +5336,8 @@ if (window.multiDeviceManager) {
             cell.className = 'diag-dpad-btn';
             cell.setAttribute('data-key', button.key);
             cell.style.background = '#111';
-            cell.style.color = '#ffe066';
-            cell.style.border = '2px solid #ffe066';
+            cell.style.color = '#5DE3CB';
+            cell.style.border = '2px solid #5DE3CB';
             cell.style.borderRadius = '4px';
             cell.style.fontWeight = 'bold';
             cell.style.fontSize = button.key === 'GUIDE' ? '12px' : '14px';
@@ -5363,7 +5363,7 @@ if (window.multiDeviceManager) {
         const joystickVisual = document.createElement('div');
         joystickVisual.style.width = '80px';
         joystickVisual.style.height = '80px';
-        joystickVisual.style.border = '2px solid #ffe066';
+        joystickVisual.style.border = '2px solid #5DE3CB';
         joystickVisual.style.borderRadius = '50%';
         joystickVisual.style.position = 'relative';
         joystickVisual.style.background = '#111';
@@ -5375,7 +5375,7 @@ if (window.multiDeviceManager) {
         joystickDot.id = 'diag-joystick-dot';
         joystickDot.style.width = '8px';
         joystickDot.style.height = '8px';
-        joystickDot.style.background = '#ffe066';
+        joystickDot.style.background = '#5DE3CB';
         joystickDot.style.borderRadius = '50%';
         joystickDot.style.position = 'absolute';
         joystickDot.style.top = '50%';
@@ -5398,14 +5398,14 @@ if (window.multiDeviceManager) {
         const xAxisDiv = document.createElement('div');
         xAxisDiv.style.color = '#bbb';
         xAxisDiv.style.textAlign = 'center';
-        xAxisDiv.innerHTML = 'X: <span id="diag-hat-x" style="color:#ffe066; font-weight:bold;">-</span>';
+        xAxisDiv.innerHTML = 'X: <span id="diag-hat-x" style="color:#5DE3CB; font-weight:bold;">-</span>';
         valueContainer.appendChild(xAxisDiv);
         
         // Y Axis
         const yAxisDiv = document.createElement('div');
         yAxisDiv.style.color = '#bbb';
         yAxisDiv.style.textAlign = 'center';
-        yAxisDiv.innerHTML = 'Y: <span id="diag-hat-y" style="color:#ffe066; font-weight:bold;">-</span>';
+        yAxisDiv.innerHTML = 'Y: <span id="diag-hat-y" style="color:#5DE3CB; font-weight:bold;">-</span>';
         valueContainer.appendChild(yAxisDiv);
         
         diagHatStatus.appendChild(valueContainer);
@@ -5971,7 +5971,7 @@ if (window.multiDeviceManager) {
           box.style.borderColor = '#4CAF50'; // Green border when active
           box.style.boxShadow = '0 0 8px rgba(76, 175, 80, 0.3)'; // Green glow
         } else {
-          box.style.borderColor = '#ffe066'; // Original yellow border
+          box.style.borderColor = '#5DE3CB'; // Original yellow border
           box.style.boxShadow = 'none'; // No glow
         }
       }
@@ -6156,19 +6156,19 @@ if (window.multiDeviceManager) {
       if (box) {
         const statusElement = box.querySelector('div:last-child');
         if (status === '1') {
-          box.style.background = '#ffe066';
-          box.style.borderColor = '#ffe066';
+          box.style.background = '#5DE3CB';
+          box.style.borderColor = '#5DE3CB';
           box.style.color = '#222';
           if (statusElement) statusElement.textContent = 'ON';
         } else if (status === '0') {
           box.style.background = '#111';
-          box.style.borderColor = '#ffe066';
-          box.style.color = '#ffe066';
+          box.style.borderColor = '#5DE3CB';
+          box.style.color = '#5DE3CB';
           if (statusElement) statusElement.textContent = 'OFF';
         } else {
           box.style.background = '#333';
           box.style.borderColor = '#bbb';
-          box.style.color = '#ffe066';
+          box.style.color = '#5DE3CB';
           if (statusElement) statusElement.textContent = 'OFF';
         }
       }
@@ -6233,11 +6233,11 @@ if (window.multiDeviceManager) {
         const btn = document.querySelector(`.diag-dpad-btn[data-key='${key}']`);
         if (btn) {
           if (status === '1') {
-            btn.style.background = '#ffe066';
+            btn.style.background = '#5DE3CB';
             btn.style.color = '#222';
           } else {
             btn.style.background = '#111';
-            btn.style.color = '#ffe066';
+            btn.style.color = '#5DE3CB';
           }
         }
       });
@@ -6247,11 +6247,11 @@ if (window.multiDeviceManager) {
       const guideBtn = document.querySelector(`.diag-dpad-btn[data-key='GUIDE']`);
       if (guideBtn) {
         if (guideStatus === '1') {
-          guideBtn.style.background = '#ffe066';
+          guideBtn.style.background = '#5DE3CB';
           guideBtn.style.color = '#222';
         } else {
           guideBtn.style.background = '#111';
-          guideBtn.style.color = '#ffe066';
+          guideBtn.style.color = '#5DE3CB';
         }
       }
     } else {

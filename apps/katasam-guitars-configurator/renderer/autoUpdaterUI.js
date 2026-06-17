@@ -102,40 +102,40 @@ class AutoUpdaterUI {
     this.updateModal.style.alignItems = 'center';
     
     this.updateModal.innerHTML = `
-      <div class="modal-dialog modal-lg" role="document" style="margin: auto; max-width: 600px; width: 90%; background: #333; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; color: #f4e4bc; border: 1px solid #ffcc00;">
+      <div class="modal-dialog modal-lg" role="document" style="margin: auto; max-width: 600px; width: 90%; background: #333; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; color: #f4e4bc; border: 1px solid #28D0AF;">
         <div class="modal-content" style="border: none; border-radius: 12px; background: #333;">
-          <div class="modal-header" style="background: linear-gradient(135deg, #333333 0%, #000 100%); color: #f4e4bc; padding: 1.5rem; border-bottom: 1px solid #ffcc00; position: relative;">
+          <div class="modal-header" style="background: linear-gradient(135deg, #333333 0%, #000 100%); color: #f4e4bc; padding: 1.5rem; border-bottom: 1px solid #28D0AF; position: relative;">
             <h5 class="modal-title" style="margin: 0; font-weight: 600; font-size: 1.25rem; color: #f4e4bc;">
-              <i class="fas fa-download" style="margin-right: 10px; color: #ffcc00;"></i>
+              <i class="fas fa-download" style="margin-right: 10px; color: #28D0AF;"></i>
               Update Available
             </h5>
-            <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 1.8rem; cursor: pointer; padding: 0; margin: 0; color: #ffcc00; opacity: 0.8; line-height: 1;">
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close" style="position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 1.8rem; cursor: pointer; padding: 0; margin: 0; color: #28D0AF; opacity: 0.8; line-height: 1;">
               <span aria-hidden="true">&times;</span>
             </button>
           </div>
           <div class="modal-body" style="padding: 2rem; background: #333;">
             <div class="update-info">
               <div style="text-align: center; margin-bottom: 1.5rem;">
-                <h3 style="margin: 0; color: #ffcc00; font-weight: 600;">Version <span id="updateVersion"></span></h3>
-                <p style="color: #ffcc00; margin: 0.5rem 0 0 0; font-size: 0.9rem;">Published: <span id="updateDate"></span></p>
+                <h3 style="margin: 0; color: #28D0AF; font-weight: 600;">Version <span id="updateVersion"></span></h3>
+                <p style="color: #28D0AF; margin: 0.5rem 0 0 0; font-size: 0.9rem;">Published: <span id="updateDate"></span></p>
               </div>
               
               <div class="release-notes-container" style="margin-bottom: 2rem;">
-                <h6 style="margin-bottom: 1rem; color: #f4e4bc; font-weight: 600; border-bottom: 2px solid #ffcc00; padding-bottom: 0.5rem;">What's New:</h6>
-                <div id="releaseNotes" class="release-notes" style="background: #1a0f08; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #ffcc00; max-height: 150px; overflow-y: auto; line-height: 1.5; font-size: 0.9rem; color: #f4e4bc;"></div>
+                <h6 style="margin-bottom: 1rem; color: #f4e4bc; font-weight: 600; border-bottom: 2px solid #28D0AF; padding-bottom: 0.5rem;">What's New:</h6>
+                <div id="releaseNotes" class="release-notes" style="background: #1a0f08; padding: 1.5rem; border-radius: 8px; border-left: 4px solid #28D0AF; max-height: 150px; overflow-y: auto; line-height: 1.5; font-size: 0.9rem; color: #f4e4bc;"></div>
               </div>
               
-              <div style="background: #1a0f08; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; border: 1px solid #ffcc00;">
+              <div style="background: #1a0f08; padding: 1.5rem; border-radius: 8px; margin-bottom: 2rem; border: 1px solid #28D0AF;">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                   <div>
                     <p style="margin: 0; color: #f4e4bc; font-weight: 600; font-size: 0.9rem;">📁 <span id="updateFileName"></span></p>
-                    <p style="margin: 0.25rem 0 0 0; color: #d4af37; font-size: 0.85rem;">📦 Size: <span id="updateFileSize"></span></p>
+                    <p style="margin: 0.25rem 0 0 0; color: #1FA88F; font-size: 0.85rem;">📦 Size: <span id="updateFileSize"></span></p>
                   </div>
                 </div>
               </div>
               
               <div class="update-actions" style="display: flex; gap: 1rem; justify-content: center;">
-                <button type="button" class="btn btn-secondary later-btn" data-dismiss="modal" style="padding: 0.75rem 1.5rem; border: 2px solid #ffcc00; background: transparent; color: #d4af37; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
+                <button type="button" class="btn btn-secondary later-btn" data-dismiss="modal" style="padding: 0.75rem 1.5rem; border: 2px solid #28D0AF; background: transparent; color: #1FA88F; border-radius: 8px; cursor: pointer; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; justify-content: center;">
                   Later
                 </button>
                 <button type="button" class="btn btn-primary" id="downloadUpdateBtn" style="padding: 0.75rem 2rem; border: 2px solid #ffd700; background: #ffd700; color: #2c1810; border-radius: 8px; cursor: pointer; font-weight: 600; transition: all 0.2s; box-shadow: 0 2px 4px rgba(255,215,0,0.3); display: flex; align-items: center; justify-content: center;">
@@ -184,8 +184,8 @@ class AutoUpdaterUI {
       downloadBtn.style.boxShadow = '0 4px 8px rgba(255,215,0,0.4)';
     });
     downloadBtn.addEventListener('mouseleave', () => {
-      downloadBtn.style.backgroundColor = '#ffcc00';
-      downloadBtn.style.borderColor = '#ffcc00';
+      downloadBtn.style.backgroundColor = '#28D0AF';
+      downloadBtn.style.borderColor = '#28D0AF';
       downloadBtn.style.transform = 'translateY(0)';
       downloadBtn.style.boxShadow = '0 2px 4px rgba(255,215,0,0.3)';
     });
@@ -198,8 +198,8 @@ class AutoUpdaterUI {
     });
     laterBtn.addEventListener('mouseleave', () => {
       laterBtn.style.backgroundColor = 'transparent';
-      laterBtn.style.borderColor = '#ffcc00';
-      laterBtn.style.color = '#d4af37';
+      laterBtn.style.borderColor = '#28D0AF';
+      laterBtn.style.color = '#1FA88F';
       laterBtn.style.transform = 'translateY(0)';
     });
     
@@ -245,43 +245,43 @@ class AutoUpdaterUI {
     this.progressModal.style.alignItems = 'center';
     
     this.progressModal.innerHTML = `
-      <div class="modal-dialog" role="document" style="margin: auto; max-width: 500px; width: 90%; background: #333; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; color: #f4e4bc; border: 1px solid #ffcc00;">
+      <div class="modal-dialog" role="document" style="margin: auto; max-width: 500px; width: 90%; background: #333; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; color: #f4e4bc; border: 1px solid #28D0AF;">
         <div class="modal-content" style="border: none; border-radius: 12px; background: #333;">
-          <div class="modal-header" style="background: linear-gradient(135deg, #333333 0%, #000 100%); color: #f4e4bc; padding: 1.5rem; border-bottom: 1px solid #ffcc00; display: flex; justify-content: space-between; align-items: center;">
+          <div class="modal-header" style="background: linear-gradient(135deg, #333333 0%, #000 100%); color: #f4e4bc; padding: 1.5rem; border-bottom: 1px solid #28D0AF; display: flex; justify-content: space-between; align-items: center;">
             <h5 class="modal-title" style="margin: 0; font-weight: 600; font-size: 1.25rem; color: #f4e4bc;">
-              <i class="fas fa-download" style="margin-right: 10px; color: #ffcc00;"></i>
+              <i class="fas fa-download" style="margin-right: 10px; color: #28D0AF;"></i>
               Downloading Update
             </h5>
-            <button type="button" id="closeProgressModalBtn" style="background: none; border: none; color: #ffcc00; font-size: 1.5rem; cursor: pointer; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s;">
+            <button type="button" id="closeProgressModalBtn" style="background: none; border: none; color: #28D0AF; font-size: 1.5rem; cursor: pointer; padding: 0; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: all 0.2s;">
               <i class="fas fa-times"></i>
             </button>
           </div>
           <div class="modal-body" style="padding: 1.5rem; text-align: center; background: #333;">
             <div id="downloadInProgress">
-              <div class="progress" style="height: 30px; background: #1a1a1a; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #ffcc00; overflow: hidden; position: relative; display: flex; align-items: stretch;">
+              <div class="progress" style="height: 30px; background: #1a1a1a; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #28D0AF; overflow: hidden; position: relative; display: flex; align-items: stretch;">
                 <div id="downloadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
-                     role="progressbar" style="width: 0%; background: linear-gradient(45deg, #ffcc00, #e6b800); color: #000; font-weight: 600; height: 100%; position: absolute; top: 0; left: 0; bottom: 0; right: auto; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 0; padding: 0; box-sizing: border-box;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                     role="progressbar" style="width: 0%; background: linear-gradient(45deg, #28D0AF, #e6b800); color: #000; font-weight: 600; height: 100%; position: absolute; top: 0; left: 0; bottom: 0; right: auto; display: flex; align-items: center; justify-content: center; border-radius: 8px; margin: 0; padding: 0; box-sizing: border-box;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
                   0%
                 </div>
               </div>
-              <p id="downloadStatus" style="color: #ffcc00; margin: 0;">Preparing download...</p>
+              <p id="downloadStatus" style="color: #28D0AF; margin: 0;">Preparing download...</p>
             </div>
             
             <div id="downloadComplete" style="display: none;">
-              <div style="background: #1a1a1a; padding: 1rem; border-radius: 8px; border-left: 4px solid #ffcc00; margin-bottom: 1rem;">
-                <i class="fas fa-check-circle" style="color: #ffcc00; margin-right: 0.5rem; font-size: 1.1rem;"></i>
-                <strong style="color: #ffcc00;">Download completed successfully!</strong>
+              <div style="background: #1a1a1a; padding: 1rem; border-radius: 8px; border-left: 4px solid #28D0AF; margin-bottom: 1rem;">
+                <i class="fas fa-check-circle" style="color: #28D0AF; margin-right: 0.5rem; font-size: 1.1rem;"></i>
+                <strong style="color: #28D0AF;">Download completed successfully!</strong>
               </div>
               
-              <div style="background: #1a1a1a; padding: 1rem; border-radius: 8px; border: 1px solid #ffcc00; margin-bottom: 1rem; text-align: left;">
-                <h6 style="color: #ffcc00; margin-top: 0; margin-bottom: 0.5rem; text-align: center; font-size: 1rem;">📁 Installation Instructions</h6>
+              <div style="background: #1a1a1a; padding: 1rem; border-radius: 8px; border: 1px solid #28D0AF; margin-bottom: 1rem; text-align: left;">
+                <h6 style="color: #28D0AF; margin-top: 0; margin-bottom: 0.5rem; text-align: center; font-size: 1rem;">📁 Installation Instructions</h6>
                 <p style="color: #f4e4bc; margin: 0; text-align: center; line-height: 1.5; font-size: 0.9rem;">
                   Close this app and replace it with the one in your download folder.
                 </p>
               </div>
               
               <div style="display: flex; justify-content: center;">
-                <button type="button" id="openDownloadsAndCloseBtn" style="padding: 0.75rem 1.5rem; border: 2px solid #ffcc00; background: #ffcc00; color: #000; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
+                <button type="button" id="openDownloadsAndCloseBtn" style="padding: 0.75rem 1.5rem; border: 2px solid #28D0AF; background: #28D0AF; color: #000; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
                   <i class="fas fa-folder-open" style="margin-right: 0.5rem;"></i> Open Downloads & Close App
                 </button>
               </div>
@@ -630,11 +630,11 @@ class AutoUpdaterUI {
         justify-content: center; align-items: center;
       `;
       this.checkingModal.innerHTML = `
-        <div style="background: #333; padding: 2rem; border-radius: 8px; text-align: center; color: #f4e4bc; border: 1px solid #ffcc00;">
+        <div style="background: #333; padding: 2rem; border-radius: 8px; text-align: center; color: #f4e4bc; border: 1px solid #28D0AF;">
           <div style="margin-bottom: 1rem;">
-            <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #ffcc00;"></i>
+            <i class="fas fa-spinner fa-spin" style="font-size: 2rem; color: #28D0AF;"></i>
           </div>
-          <h4 style="margin: 0; color: #ffcc00;">Checking for Updates...</h4>
+          <h4 style="margin: 0; color: #28D0AF;">Checking for Updates...</h4>
           <p style="margin: 0.5rem 0 0 0; color: #f4e4bc;">Please wait while we check for the latest version.</p>
         </div>
       `;
@@ -663,14 +663,14 @@ class AutoUpdaterUI {
     
     // Recreate the modal content each time to ensure fresh countdown element
     this.noUpdateModal.innerHTML = `
-      <div style="background: #333; padding: 2rem; border-radius: 8px; text-align: center; color: #f4e4bc; border: 1px solid #ffcc00; max-width: 400px;">
+      <div style="background: #333; padding: 2rem; border-radius: 8px; text-align: center; color: #f4e4bc; border: 1px solid #28D0AF; max-width: 400px;">
         <div style="margin-bottom: 1rem;">
-          <i class="fas fa-check-circle" style="font-size: 2rem; color: #ffcc00;"></i>
+          <i class="fas fa-check-circle" style="font-size: 2rem; color: #28D0AF;"></i>
         </div>
-        <h4 style="margin: 0 0 1rem 0; color: #ffcc00;">You're Up to Date!</h4>
+        <h4 style="margin: 0 0 1rem 0; color: #28D0AF;">You're Up to Date!</h4>
         <p style="margin: 0 0 1.5rem 0; color: #f4e4bc;">You are running the latest version of KATASAM Guitars Configurator.</p>
-        <p id="autoCloseCountdown" style="margin: 0 0 1rem 0; color: #d4af37; font-size: 0.9rem;">Closing in 3 seconds...</p>
-        <button id="noUpdateOkBtn" style="padding: 0.5rem 1.5rem; background: #ffcc00; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
+        <p id="autoCloseCountdown" style="margin: 0 0 1rem 0; color: #1FA88F; font-size: 0.9rem;">Closing in 3 seconds...</p>
+        <button id="noUpdateOkBtn" style="padding: 0.5rem 1.5rem; background: #28D0AF; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
           OK
         </button>
       </div>

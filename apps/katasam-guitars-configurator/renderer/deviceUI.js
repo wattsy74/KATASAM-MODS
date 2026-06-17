@@ -62,7 +62,7 @@ function applyConfig(config) {
   // Fret toggle button state
   const toggleBtn = document.querySelector('.fret-toggle-button.selected');
   if (toggleBtn) {
-    toggleBtn.style.border = '2px solid #ffcc00';
+    toggleBtn.style.border = '2px solid #28D0AF';
   }
   // Store config for debugging
   window.originalConfig = config;

@@ -768,7 +768,7 @@ class AutomaticFirmwareUpdater {
         `;
         refreshModal.innerHTML = `
             <div style="background: #2a2a2a; color: #eee; padding: 30px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 400px; text-align: center;">
-                <h3 style="margin-top: 0; color: #ffcc00;">🔄 Refreshing Device Version...</h3>
+                <h3 style="margin-top: 0; color: #28D0AF;">🔄 Refreshing Device Version...</h3>
                 <p style="margin: 15px 0;">Detecting current firmware version...</p>
             </div>
         `;
@@ -842,10 +842,10 @@ class AutomaticFirmwareUpdater {
                 
                 refreshModal.innerHTML = `
                     <div style="background: #2a2a2a; color: #eee; padding: 30px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 400px; text-align: center;">
-                        <h3 style="margin-top: 0; color: #ffcc00;">✅ Version Refreshed!</h3>
+                        <h3 style="margin-top: 0; color: #28D0AF;">✅ Version Refreshed!</h3>
                         <p style="margin: 15px 0;"><strong>Current Firmware:</strong> ${versionDisplay}</p>
                         <p style="margin: 15px 0;">Device version successfully updated in diagnostics.</p>
-                        <button onclick="this.parentNode.parentNode.remove()" style="background: #ffcc00; color: black; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;">Close</button>
+                        <button onclick="this.parentNode.parentNode.remove()" style="background: #28D0AF; color: black; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;">Close</button>
                     </div>
                 `;
                 
@@ -998,7 +998,7 @@ class AutomaticFirmwareUpdater {
                 <p style="margin: 15px 0;">Unable to determine current firmware version.</p>
                 <p style="margin: 15px 0;">Update check cannot proceed without knowing the current version.</p>
                 <div style="margin-top: 25px;">
-                    <button id="refresh-version" style="background: #ffcc00; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 0 10px;">🔄 Refresh Version</button>
+                    <button id="refresh-version" style="background: #28D0AF; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 0 10px;">🔄 Refresh Version</button>
                     <button id="dismiss-warning" style="background: #666; color: white; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 14px; margin: 0 10px;">Dismiss</button>
                 </div>
             </div>
@@ -1137,7 +1137,7 @@ class AutomaticFirmwareUpdater {
         const remoteVersionDisplay = remoteManifest.firmware_version.startsWith('v') ? remoteManifest.firmware_version : `v${remoteManifest.firmware_version}`;
         
         modalContent.innerHTML = `
-            <h3 style="margin-top: 0; color: #ffcc00;">🎉 Firmware Update Available!</h3>
+            <h3 style="margin-top: 0; color: #28D0AF;">🎉 Firmware Update Available!</h3>
             <p style="margin: 15px 0;"><strong>Current:</strong> ${currentVersionDisplay}</p>
             <p style="margin: 15px 0;"><strong>Available:</strong> ${remoteVersionDisplay}</p>
             <p style="margin: 15px 0; font-size: 14px; color: #ccc;">${remoteManifest.release_notes || 'New firmware version available'}</p>
@@ -1152,7 +1152,7 @@ class AutomaticFirmwareUpdater {
         
         const updateButton = document.createElement('button');
         updateButton.textContent = 'Update Now';
-        updateButton.style.cssText = 'background: #ffcc00; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 0 10px;';
+        updateButton.style.cssText = 'background: #28D0AF; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin: 0 10px;';
         updateButton.onclick = () => {
             console.log("🚀 Update Now clicked - starting firmware update process");
             notification.remove();
@@ -1217,9 +1217,9 @@ class AutomaticFirmwareUpdater {
         `;
         notification.innerHTML = `
             <div style="background: #2a2a2a; color: #eee; padding: 30px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 400px; text-align: center;">
-                <h3 style="margin-top: 0; color: #ffcc00;">✅ Firmware Up to Date</h3>
+                <h3 style="margin-top: 0; color: #28D0AF;">✅ Firmware Up to Date</h3>
                 <p style="margin: 15px 0;">Your device is running the latest firmware version ${versionDisplay}</p>
-                <button onclick="this.parentNode.parentNode.remove()" style="background: #ffcc00; color: black; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;">Close</button>
+                <button onclick="this.parentNode.parentNode.remove()" style="background: #28D0AF; color: black; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px;">Close</button>
             </div>
         `;
         
@@ -1312,14 +1312,14 @@ class AutomaticFirmwareUpdater {
             const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
             progressModal.innerHTML = `
                 <div style="background: #2a2a2a; color: #eee; padding: 40px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 500px; text-align: center; min-width: 400px;">
-                    <h3 style="margin-top: 0; color: #ffcc00;">🚀 Updating Firmware to v${manifestToUse.firmware_version}</h3>
+                    <h3 style="margin-top: 0; color: #28D0AF;">🚀 Updating Firmware to v${manifestToUse.firmware_version}</h3>
                     <div style="background: #ff5722; color: white; padding: 10px; border-radius: 4px; margin: 15px 0; font-size: 12px;">
                         <strong>⚠️ DO NOT DISCONNECT DEVICE</strong><br>
                         Disconnecting during update may damage firmware
                     </div>
                     <div style="margin: 20px 0;">
                         <div style="background: #444; border-radius: 10px; overflow: hidden; height: 20px; margin: 10px 0;">
-                            <div style="background: #ffcc00; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
+                            <div style="background: #28D0AF; height: 100%; width: ${percentage}%; transition: width 0.3s ease;"></div>
                         </div>
                         <p style="margin: 10px 0; font-size: 14px;">${detail}</p>
                         ${total > 0 ? `<p style="margin: 5px 0; font-size: 12px; color: #aaa;">${current}/${total} (${percentage}%)</p>` : ''}
@@ -1542,12 +1542,12 @@ class AutomaticFirmwareUpdater {
         
         progressModal.innerHTML = `
             <div style="background: #2a2a2a; color: #eee; padding: 40px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); max-width: 500px; text-align: center;">
-                <h3 style="margin-top: 0; color: #ffcc00;">✅ Update Complete & Validated!</h3>
+                <h3 style="margin-top: 0; color: #28D0AF;">✅ Update Complete & Validated!</h3>
                 <p style="margin: 15px 0;">Firmware has been successfully updated to <strong>v${expectedVersion}</strong></p>
-                <p style="margin: 15px 0; font-size: 14px; color: #ffcc00;">✓ Device reconnected successfully</p>
-                <p style="margin: 15px 0; font-size: 14px; color: #ffcc00;">✓ New firmware version confirmed</p>
+                <p style="margin: 15px 0; font-size: 14px; color: #28D0AF;">✓ Device reconnected successfully</p>
+                <p style="margin: 15px 0; font-size: 14px; color: #28D0AF;">✓ New firmware version confirmed</p>
                 <p style="margin: 15px 0; font-size: 14px; color: #ccc;">Your device is now running the latest firmware and ready to use.</p>
-                <button onclick="this.parentNode.parentNode.remove()" style="background: #ffcc00; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 15px;">Close</button>
+                <button onclick="this.parentNode.parentNode.remove()" style="background: #28D0AF; color: black; border: none; padding: 12px 24px; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 15px;">Close</button>
             </div>
         `;
     }
