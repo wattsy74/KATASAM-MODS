@@ -1447,6 +1447,31 @@ const collectCurrentColors = () => {
 };
 
 const initFileQueue = () => ['config.json', 'presets.json', 'user_presets.json'];
+const PRESETS_CACHE_KEY = 'katasam.configurator.presets.cache.v1';
+
+function setRuntimePresetsData(presets) {
+  const normalized = (presets && typeof presets === 'object') ? presets : {};
+  window.presets = normalized;
+  window.presetsData = normalized.presets || normalized;
+  try {
+    localStorage.setItem(PRESETS_CACHE_KEY, JSON.stringify(normalized));
+  } catch (err) {
+    console.warn('[presets-cache] Failed to persist presets cache:', err);
+  }
+}
+
+function loadCachedPresetsData() {
+  try {
+    const raw = localStorage.getItem(PRESETS_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (err) {
+    console.warn('[presets-cache] Failed to load presets cache:', err);
+    return null;
+  }
+}
 
 const populatePresetDropdown = (presets, isUserPresets = false) => {
 // ...existing code...
@@ -1457,8 +1482,17 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
     console.error(`[populatePresetDropdown] No select element found for id: ${id}`);
     return;
   }
+  select.innerHTML = '';
+  const top = document.createElement('option');
+  top.value = '';
+  top.textContent = isUserPresets ? 'Select user preset...' : 'Select preset...';
+  top.disabled = false;
+  top.selected = true;
+  select.appendChild(top);
+
   if (!presets) {
     console.error('[populatePresetDropdown] No presets data provided');
+    top.textContent = isUserPresets ? 'No user presets available' : 'No presets available';
     return;
   }
 
@@ -1466,16 +1500,15 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
   const presetsData = presets.presets || presets;
   if (!presetsData || Object.keys(presetsData).length === 0) {
     console.error('[populatePresetDropdown] presetsData is empty or missing:', presetsData);
+    top.textContent = isUserPresets ? 'No user presets available' : 'No presets available';
     return;
   }
-  console.log('[populatePresetDropdown] presetsData:', presetsData);
 
-  select.innerHTML = '';
-  const top = document.createElement('option');
-  top.textContent = isUserPresets ? 'User Preset Slots:' : 'Presets:';
-  top.disabled = true;
-  top.selected = true;
-  select.appendChild(top);
+  if (!isUserPresets) {
+    setRuntimePresetsData(presets);
+  }
+
+  console.log('[populatePresetDropdown] presetsData:', presetsData);
 
   const keys = Object.keys(presetsData).filter(key => {
     // Filter out "Select Preset" if it exists as an actual preset
@@ -1659,6 +1692,14 @@ function updateTiltWaveButtonText() {
 
 // ===== DOM-dependent code =====
 document.addEventListener('DOMContentLoaded', () => {
+  const cachedPresets = loadCachedPresetsData();
+  if (cachedPresets) {
+    console.log('[startup] Restoring cached normal presets into dropdown');
+    populatePresetDropdown(cachedPresets, false);
+  } else {
+    populatePresetDropdown({}, false);
+  }
+
   // --- Device disconnect/reconnect event handlers ---
   if (window.multiDeviceManager) {
     window.multiDeviceManager.on('deviceDisconnected', (device) => {
