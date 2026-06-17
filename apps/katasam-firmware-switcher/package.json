@@ -1,0 +1,125 @@
+{
+  "name": "katasam-firmware-switcher",
+  "version": "1.0.0",
+  "description": "KATASAM Switcher - Switch between Classic and Santroller firmware",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:mac": "electron-builder --mac",
+    "build:mac:arm64": "electron-builder --mac --arm64",
+    "build:mac:x64": "electron-builder --mac --x64",
+    "build:mac:zip": "electron-builder --mac zip",
+    "build:win": "electron-builder --win --x64",
+    "build:linux": "electron-builder --linux",
+    "build:all": "electron-builder --mac --win --linux"
+  },
+  "author": "Martyn Watts",
+  "license": "MIT",
+  "dependencies": {
+    "node-hid": "^2.1.2",
+    "serialport": "^12.0.0",
+    "usb": "^2.17.0"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.katasam.firmwareswitcher",
+    "productName": "KATASAM Switcher",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer.js",
+      "renderer-minimal.js",
+      "index.html",
+      "index-minimal.html",
+      "styles.css",
+      "electropick-logo.png",
+      "node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "identity": null,
+      "signIgnore": ".*"
+    },
+    "dmg": {
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "title": "KATASAM Switcher",
+      "background": null,
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "KATASAM Switcher",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "license": "LICENSE.txt"
+    },
+    "portable": {
+      "artifactName": "KATASAM-Switcher-Portable-${version}.exe"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "Utility",
+      "icon": "assets/icon.png",
+      "desktop": {
+        "Name": "KATASAM Switcher",
+        "Comment": "Flash firmware to RP2040 devices",
+        "Categories": "Utility;System;"
+      }
+    },
+    "appImage": {
+      "artifactName": "KATASAM-Switcher-${version}.AppImage"
+    }
+  }
+}

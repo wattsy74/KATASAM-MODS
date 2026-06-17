@@ -1,0 +1,43 @@
+{
+  "name": "katasam-guitars-configurator",
+  "productName": "KATASAM Guitars Configurator",
+  "version": "4.0.0",
+  "main": "main.js",
+  "description": "KATASAM Guitars Configurator",
+  "author": "Martyn L. Watts",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "rebuild:mac:dmg": "npx -y node@20 /usr/local/bin/npm rebuild macos-alias",
+    "make:mac:zip": "npx -y node@20 ./node_modules/@electron-forge/cli/dist/electron-forge.js make --platform darwin --targets=@electron-forge/maker-zip",
+    "make:mac:dmg": "npm run rebuild:mac:dmg && npx -y node@20 ./node_modules/@electron-forge/cli/dist/electron-forge.js make --platform darwin --targets=@electron-forge/maker-dmg",
+    "rename:mac:artifacts": "node scripts/rename-mac-artifacts.js",
+    "make:mac": "npm run make:mac:zip && npm run make:mac:dmg && npm run rename:mac:artifacts",
+    "release:patch": "powershell -ExecutionPolicy Bypass -File release.ps1 -VersionType patch",
+    "release:minor": "powershell -ExecutionPolicy Bypass -File release.ps1 -VersionType minor",
+    "release:major": "powershell -ExecutionPolicy Bypass -File release.ps1 -VersionType major",
+    "release:dry-run": "powershell -ExecutionPolicy Bypass -File release.ps1 -VersionType patch -DryRun",
+    "test:updater": "powershell -ExecutionPolicy Bypass -File test-updater.ps1"
+  },
+  "dependencies": {
+    "@jaames/iro": "^5.5.2",
+    "electron-squirrel-startup": "^1.0.1",
+    "node-fetch": "^2.7.0",
+    "serialport": "^11.0.0",
+    "sudo-prompt": "^9.2.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-dmg": "^7.11.2",
+    "@electron-forge/maker-rpm": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "@rabbitholesyndrome/electron-forge-maker-portable": "^0.2.0",
+    "electron": "^27.3.11"
+  }
+}
