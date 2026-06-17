@@ -269,26 +269,136 @@ html, body {
   border-radius: 8px;
   background: #151619;
   padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .config-editor-row {
   display: grid;
-  grid-template-columns: 220px 1fr;
-  gap: 10px;
-  align-items: start;
-  padding: 8px 0;
-  border-bottom: 1px solid #2a2d33;
+  grid-template-columns: 170px 1fr;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2a2d33;
+  border-radius: 8px;
+  background: #1d2026;
 }
 
-.config-editor-row:last-child {
-  border-bottom: none;
+.config-editor-row-title {
+  color: #28D0AF;
+  font-weight: 700;
+  display: flex;
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.config-editor-row-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.config-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-editor-input-wrap {
+  display: grid;
+  grid-template-columns: 1fr 22px;
+  gap: 8px;
+  align-items: center;
+}
+
+.config-editor-input-wrap.no-swatch {
+  grid-template-columns: 1fr 22px;
+}
+
+.config-editor-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid #5d6875;
+  display: none;
+}
+
+.config-editor-color-swatch[data-pickable="true"] {
+  cursor: pointer;
+}
+
+.config-editor-hidden-color-picker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.config-editor-bool-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  cursor: pointer;
+  text-align: left;
+  padding: 8px;
+}
+
+.config-editor-mode-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  cursor: pointer;
+  text-align: left;
+  padding: 8px;
+}
+
+.config-editor-bool-toggle.is-true {
+  border-color: #28D0AF;
+  background: #19352f;
+}
+
+.config-editor-bool-toggle.is-false {
+  border-color: #5f6b79;
+  background: #2a2f36;
+}
+
+.config-editor-mode-toggle.is-dpad {
+  border-color: #28D0AF;
+  background: #19352f;
+}
+
+.config-editor-mode-toggle.is-joystick {
+  border-color: #f0c247;
+  background: #3a3018;
+}
+
+.config-editor-bool-toggle:focus {
+  outline: none;
+  border-color: #28D0AF;
+}
+
+.config-editor-mode-toggle:focus {
+  outline: none;
+  border-color: #28D0AF;
 }
 
 .config-editor-key {
   color: #d6d6d6;
   font-weight: 600;
-  padding-top: 8px;
+  padding-top: 0;
   word-break: break-word;
+  font-size: 12px;
 }
 
 .config-editor-value {
@@ -307,6 +417,22 @@ html, body {
 .config-editor-value:focus {
   outline: none;
   border-color: #28D0AF;
+}
+
+@media (max-width: 1100px) {
+  .config-editor-row-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .config-editor-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .config-editor-row-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .picker-area {

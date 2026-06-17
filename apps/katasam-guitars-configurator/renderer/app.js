@@ -4059,47 +4059,501 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
   const configEditorV1Btn = document.getElementById('config-editor-v1-btn');
   const configEditorV2Btn = document.getElementById('config-editor-v2-btn');
   const configEditorReloadBtn = document.getElementById('config-editor-reload-btn');
+  let configEditorSourceConfig = null;
+
+  const configEditorLabels = {
+    device_name: 'Device Name',
+    _metadata: 'Metadata',
+    UP: 'DPad Up',
+    DOWN: 'DPad Down',
+    LEFT: 'DPad Left',
+    RIGHT: 'DPad Right',
+    GREEN_FRET: 'Green Fret',
+    GREEN_FRET_led: 'Green Fret LED Index',
+    RED_FRET: 'Red Fret',
+    RED_FRET_led: 'Red Fret LED Index',
+    YELLOW_FRET: 'Yellow Fret',
+    YELLOW_FRET_led: 'Yellow Fret LED Index',
+    BLUE_FRET: 'Blue Fret',
+    BLUE_FRET_led: 'Blue Fret LED Index',
+    ORANGE_FRET: 'Orange Fret',
+    ORANGE_FRET_led: 'Orange Fret LED Index',
+    STRUM_UP: 'Strum Up',
+    STRUM_UP_led: 'Strum Up LED Index',
+    STRUM_DOWN: 'Strum Down',
+    STRUM_DOWN_led: 'Strum Down LED Index',
+    TILT: 'Tilt',
+    SELECT: 'Select',
+    START: 'Start',
+    GUIDE: 'Guide',
+    WHAMMY: 'Whammy',
+    neopixel_pin: 'LED Data Pin',
+    joystick_x_pin: 'Joystick X Pin',
+    joystick_y_pin: 'Joystick Y Pin',
+    hat_mode: 'Hat Mode',
+    led_brightness: 'LED Brightness',
+    whammy_min: 'Whammy Min',
+    whammy_max: 'Whammy Max',
+    whammy_reverse: 'Whammy Reverse',
+    tilt_wave_enabled: 'Tilt Wave Enabled',
+    led_color: 'Pressed LED Colors',
+    released_color: 'Released LED Colors'
+  };
+
+  function getConfigEditorLabel(key) {
+    return configEditorLabels[key] || key;
+  }
+
+  const configEditorColorIndexMap = {
+    STRUM_UP: 0,
+    STRUM_DOWN: 1,
+    ORANGE_FRET: 2,
+    BLUE_FRET: 3,
+    YELLOW_FRET: 4,
+    RED_FRET: 5,
+    GREEN_FRET: 6
+  };
+
+  function getConfigColorValue(configObj, sourceKey, colorSet) {
+    const colorIndex = configEditorColorIndexMap[sourceKey];
+    if (typeof colorIndex !== 'number') return '';
+    const colorArray = Array.isArray(configObj[colorSet]) ? configObj[colorSet] : [];
+    const value = colorArray[colorIndex];
+    return value === undefined ? '' : value;
+  }
+
+  function setConfigColorValue(configObj, sourceKey, colorSet, value) {
+    const colorIndex = configEditorColorIndexMap[sourceKey];
+    if (typeof colorIndex !== 'number') return;
+    if (!Array.isArray(configObj[colorSet])) {
+      configObj[colorSet] = [];
+    }
+    configObj[colorSet][colorIndex] = value;
+  }
+
+  function createEditorInput(fieldDef, value) {
+    if (fieldDef.type === 'key' && fieldDef.key === 'hat_mode') {
+      const modeToggleEl = document.createElement('button');
+      modeToggleEl.type = 'button';
+      modeToggleEl.className = 'config-editor-mode-toggle';
+      modeToggleEl.dataset.fieldType = 'key';
+      modeToggleEl.dataset.key = fieldDef.key;
+
+      const normalizeMode = (modeValue) => {
+        const normalized = String(modeValue || '').toLowerCase();
+        return normalized === 'joystick' ? 'joystick' : 'dpad';
+      };
+
+      const renderMode = () => {
+        const mode = normalizeMode(modeToggleEl.dataset.modeValue);
+        modeToggleEl.dataset.modeValue = mode;
+        modeToggleEl.textContent = mode === 'joystick' ? 'Joystick' : 'DPad';
+        modeToggleEl.classList.toggle('is-joystick', mode === 'joystick');
+        modeToggleEl.classList.toggle('is-dpad', mode !== 'joystick');
+      };
+
+      modeToggleEl.dataset.modeValue = normalizeMode(value);
+      modeToggleEl.addEventListener('click', () => {
+        const current = normalizeMode(modeToggleEl.dataset.modeValue);
+        modeToggleEl.dataset.modeValue = current === 'joystick' ? 'dpad' : 'joystick';
+        renderMode();
+        applyHatModeVisibility(modeToggleEl.dataset.modeValue);
+      });
+
+      renderMode();
+      return modeToggleEl;
+    }
+
+    if (typeof value === 'boolean') {
+      const toggleEl = document.createElement('button');
+      toggleEl.type = 'button';
+      toggleEl.className = 'config-editor-bool-toggle';
+      toggleEl.dataset.booleanValue = value ? 'true' : 'false';
+
+      if (fieldDef.type === 'key') {
+        toggleEl.dataset.fieldType = 'key';
+        toggleEl.dataset.key = fieldDef.key;
+      } else {
+        toggleEl.dataset.fieldType = 'color';
+        toggleEl.dataset.sourceKey = fieldDef.sourceKey;
+        toggleEl.dataset.colorSet = fieldDef.colorSet;
+      }
+
+      const renderToggle = () => {
+        const isTrue = toggleEl.dataset.booleanValue === 'true';
+        toggleEl.textContent = isTrue ? 'True' : 'False';
+        toggleEl.classList.toggle('is-true', isTrue);
+        toggleEl.classList.toggle('is-false', !isTrue);
+      };
+
+      toggleEl.addEventListener('click', () => {
+        const isTrue = toggleEl.dataset.booleanValue === 'true';
+        toggleEl.dataset.booleanValue = isTrue ? 'false' : 'true';
+        renderToggle();
+      });
+
+      renderToggle();
+      return toggleEl;
+    }
+
+    const valueEl = document.createElement('textarea');
+    valueEl.className = 'config-editor-value';
+    valueEl.value = formatEditorValue(value);
+    valueEl.rows = Array.isArray(value) || (value && typeof value === 'object') ? 3 : 1;
+
+    if (fieldDef.type === 'key') {
+      valueEl.dataset.fieldType = 'key';
+      valueEl.dataset.key = fieldDef.key;
+    } else {
+      valueEl.dataset.fieldType = 'color';
+      valueEl.dataset.sourceKey = fieldDef.sourceKey;
+      valueEl.dataset.colorSet = fieldDef.colorSet;
+    }
+
+    return valueEl;
+  }
+
+  function normalizePreviewColor(raw) {
+    if (raw === null || raw === undefined) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+
+    if (/^#[0-9a-fA-F]{6}$/.test(text)) return text;
+    if (/^#[0-9a-fA-F]{3}$/.test(text)) return text;
+
+    const rgbMatch = text.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+    if (rgbMatch) {
+      const r = Math.max(0, Math.min(255, Number(rgbMatch[1])));
+      const g = Math.max(0, Math.min(255, Number(rgbMatch[2])));
+      const b = Math.max(0, Math.min(255, Number(rgbMatch[3])));
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    // Supports JSON array color input like [255, 77, 0]
+    if (/^\[.*\]$/.test(text)) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length >= 3) {
+          const r = Math.max(0, Math.min(255, Number(parsed[0])));
+          const g = Math.max(0, Math.min(255, Number(parsed[1])));
+          const b = Math.max(0, Math.min(255, Number(parsed[2])));
+          if (![r, g, b].some(Number.isNaN)) {
+            return `rgb(${r}, ${g}, ${b})`;
+          }
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  function previewColorToHex(colorValue) {
+    if (!colorValue) return null;
+
+    if (/^#[0-9a-fA-F]{6}$/.test(colorValue)) {
+      return colorValue.toUpperCase();
+    }
+
+    if (/^#[0-9a-fA-F]{3}$/.test(colorValue)) {
+      const r = colorValue[1];
+      const g = colorValue[2];
+      const b = colorValue[3];
+      return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+    }
+
+    const rgbMatch = colorValue.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+    if (!rgbMatch) return null;
+
+    const toHex = (num) => {
+      const bounded = Math.max(0, Math.min(255, Number(num)));
+      return bounded.toString(16).padStart(2, '0');
+    };
+
+    return `#${toHex(rgbMatch[1])}${toHex(rgbMatch[2])}${toHex(rgbMatch[3])}`.toUpperCase();
+  }
+
+  function updateColorPreview(inputEl, swatchEl) {
+    const color = normalizePreviewColor(inputEl.value);
+    if (!color) {
+      swatchEl.style.display = 'none';
+      swatchEl.style.background = 'transparent';
+      return;
+    }
+    swatchEl.style.display = 'block';
+    swatchEl.style.background = color;
+  }
+
+  function createEditorField(fieldDef, configObj) {
+    const fieldEl = document.createElement('div');
+    fieldEl.className = 'config-editor-field';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'config-editor-key';
+    labelEl.textContent = fieldDef.label;
+
+    const value = fieldDef.type === 'key'
+      ? configObj[fieldDef.key]
+      : getConfigColorValue(configObj, fieldDef.sourceKey, fieldDef.colorSet);
+    const inputEl = createEditorInput(fieldDef, value);
+
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'config-editor-input-wrap';
+
+    if (inputEl.classList.contains('config-editor-value')) {
+      const swatchEl = document.createElement('div');
+      swatchEl.className = 'config-editor-color-swatch';
+
+      const pickerEl = document.createElement('input');
+      pickerEl.type = 'color';
+      pickerEl.className = 'config-editor-hidden-color-picker';
+
+      inputWrap.appendChild(inputEl);
+      inputWrap.appendChild(swatchEl);
+      inputWrap.appendChild(pickerEl);
+
+      // Show a swatch when the field value is a previewable color format.
+      const syncSwatchAndPicker = () => {
+        updateColorPreview(inputEl, swatchEl);
+        const preview = normalizePreviewColor(inputEl.value);
+        const hex = previewColorToHex(preview);
+        if (hex) {
+          pickerEl.value = hex;
+          swatchEl.dataset.pickable = 'true';
+        } else {
+          swatchEl.dataset.pickable = 'false';
+        }
+      };
+
+      syncSwatchAndPicker();
+      inputEl.addEventListener('input', syncSwatchAndPicker);
+      swatchEl.addEventListener('click', () => {
+        if (swatchEl.dataset.pickable !== 'true') return;
+        pickerEl.click();
+      });
+
+      pickerEl.addEventListener('input', () => {
+        inputEl.value = pickerEl.value.toUpperCase();
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    } else {
+      inputWrap.classList.add('no-swatch');
+      inputWrap.appendChild(inputEl);
+    }
+
+    fieldEl.appendChild(labelEl);
+    fieldEl.appendChild(inputWrap);
+    return fieldEl;
+  }
+
+  function buildConfigEditorGroups(configObj) {
+    const renderedKeys = new Set();
+    const hatMode = String(configObj.hat_mode || '').toLowerCase() === 'joystick' ? 'joystick' : 'dpad';
+
+    const groups = [
+      {
+        title: 'Green Fret',
+        fields: [
+          { type: 'key', key: 'GREEN_FRET', label: 'Green Fret' },
+          { type: 'key', key: 'GREEN_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'GREEN_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'GREEN_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Red Fret',
+        fields: [
+          { type: 'key', key: 'RED_FRET', label: 'Red Fret' },
+          { type: 'key', key: 'RED_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'RED_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'RED_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Yellow Fret',
+        fields: [
+          { type: 'key', key: 'YELLOW_FRET', label: 'Yellow Fret' },
+          { type: 'key', key: 'YELLOW_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'YELLOW_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'YELLOW_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Blue Fret',
+        fields: [
+          { type: 'key', key: 'BLUE_FRET', label: 'Blue Fret' },
+          { type: 'key', key: 'BLUE_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'BLUE_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'BLUE_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Orange Fret',
+        fields: [
+          { type: 'key', key: 'ORANGE_FRET', label: 'Orange Fret' },
+          { type: 'key', key: 'ORANGE_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'ORANGE_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'ORANGE_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Strum Up',
+        fields: [
+          { type: 'key', key: 'STRUM_UP', label: 'Strum Up' },
+          { type: 'key', key: 'STRUM_UP_led', label: 'LED Index' },
+          { type: 'color', sourceKey: 'STRUM_UP', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'STRUM_UP', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Strum Down',
+        fields: [
+          { type: 'key', key: 'STRUM_DOWN', label: 'Strum Down' },
+          { type: 'key', key: 'STRUM_DOWN_led', label: 'LED Index' },
+          { type: 'color', sourceKey: 'STRUM_DOWN', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'STRUM_DOWN', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Whammy',
+        fields: [
+          { type: 'key', key: 'WHAMMY', label: getConfigEditorLabel('WHAMMY') },
+          { type: 'key', key: 'whammy_min', label: getConfigEditorLabel('whammy_min') },
+          { type: 'key', key: 'whammy_max', label: getConfigEditorLabel('whammy_max') },
+          { type: 'key', key: 'whammy_reverse', label: getConfigEditorLabel('whammy_reverse') }
+        ]
+      },
+      {
+        title: 'Controller Inputs',
+        fields: [
+          { type: 'key', key: 'SELECT', label: getConfigEditorLabel('SELECT') },
+          { type: 'key', key: 'START', label: getConfigEditorLabel('START') },
+          { type: 'key', key: 'GUIDE', label: getConfigEditorLabel('GUIDE') },
+          { type: 'key', key: 'TILT', label: getConfigEditorLabel('TILT') }
+        ]
+      },
+      {
+        title: 'Modes',
+        fields: [
+          { type: 'key', key: 'hat_mode', label: getConfigEditorLabel('hat_mode') },
+          { type: 'key', key: 'tilt_wave_enabled', label: getConfigEditorLabel('tilt_wave_enabled') }
+        ]
+      },
+      {
+        title: 'DPad',
+        visibility: 'dpad-only',
+        fields: [
+          { type: 'key', key: 'UP', label: getConfigEditorLabel('UP') },
+          { type: 'key', key: 'DOWN', label: getConfigEditorLabel('DOWN') },
+          { type: 'key', key: 'LEFT', label: getConfigEditorLabel('LEFT') },
+          { type: 'key', key: 'RIGHT', label: getConfigEditorLabel('RIGHT') }
+        ]
+      },
+      {
+        title: 'Joystick Pins',
+        visibility: 'joystick-only',
+        fields: [
+          { type: 'key', key: 'joystick_x_pin', label: getConfigEditorLabel('joystick_x_pin') },
+          { type: 'key', key: 'joystick_y_pin', label: getConfigEditorLabel('joystick_y_pin') }
+        ]
+      },
+      {
+        title: 'Pins',
+        fields: [
+          { type: 'key', key: 'neopixel_pin', label: getConfigEditorLabel('neopixel_pin') }
+        ]
+      }
+    ];
+
+    groups.forEach(group => {
+      group.fields.forEach(field => {
+        if (field.type === 'key') {
+          renderedKeys.add(field.key);
+        }
+      });
+    });
+
+    // Keep current mode handy for first render visibility.
+    groups.__hatMode = hatMode;
+
+    return groups;
+  }
+
+  function applyHatModeVisibility(modeValue) {
+    if (!configEditorFields) return;
+    const mode = String(modeValue || '').toLowerCase() === 'joystick' ? 'joystick' : 'dpad';
+    const allRows = configEditorFields.querySelectorAll('.config-editor-row');
+    allRows.forEach(row => {
+      const visibility = row.dataset.visibility || 'always';
+      if (visibility === 'dpad-only') {
+        row.style.display = mode === 'dpad' ? '' : 'none';
+      } else if (visibility === 'joystick-only') {
+        row.style.display = mode === 'joystick' ? '' : 'none';
+      } else {
+        row.style.display = '';
+      }
+    });
+  }
 
   function renderConfigEditor(configObj) {
     if (!configEditorFields) return;
     configEditorFields.innerHTML = '';
 
-    Object.entries(configObj).forEach(([key, value]) => {
+    const groups = buildConfigEditorGroups(configObj);
+
+    groups.forEach(group => {
       const row = document.createElement('div');
       row.className = 'config-editor-row';
+      row.dataset.visibility = group.visibility || 'always';
 
-      const keyEl = document.createElement('div');
-      keyEl.className = 'config-editor-key';
-      keyEl.textContent = key;
+      const titleEl = document.createElement('div');
+      titleEl.className = 'config-editor-row-title';
+      titleEl.textContent = group.title;
 
-      const valueEl = document.createElement('textarea');
-      valueEl.className = 'config-editor-value';
-      valueEl.dataset.key = key;
-      valueEl.value = formatEditorValue(value);
-      valueEl.rows = Array.isArray(value) || (value && typeof value === 'object') ? 3 : 1;
+      const fieldsWrap = document.createElement('div');
+      fieldsWrap.className = 'config-editor-row-fields';
 
-      row.appendChild(keyEl);
-      row.appendChild(valueEl);
+      group.fields.forEach(field => {
+        fieldsWrap.appendChild(createEditorField(field, configObj));
+      });
+
+      row.appendChild(titleEl);
+      row.appendChild(fieldsWrap);
       configEditorFields.appendChild(row);
     });
+
+    applyHatModeVisibility(groups.__hatMode || 'dpad');
   }
 
   function readConfigFromEditor() {
-    const nextConfig = {};
+    const nextConfig = configEditorSourceConfig ? cloneJsonObject(configEditorSourceConfig) : {};
     const errors = [];
 
     if (!configEditorFields) {
       return { nextConfig, errors };
     }
 
-    const allInputs = configEditorFields.querySelectorAll('.config-editor-value');
+    const allInputs = configEditorFields.querySelectorAll('.config-editor-value, .config-editor-bool-toggle');
     allInputs.forEach(inputEl => {
-      const key = inputEl.dataset.key;
-      const rawValue = inputEl.value;
       try {
-        nextConfig[key] = parseEditorValue(rawValue);
+        let parsedValue;
+        if (inputEl.classList.contains('config-editor-bool-toggle')) {
+          parsedValue = inputEl.dataset.booleanValue === 'true';
+        } else if (inputEl.classList.contains('config-editor-mode-toggle')) {
+          parsedValue = inputEl.dataset.modeValue === 'joystick' ? 'joystick' : 'dpad';
+        } else {
+          parsedValue = parseEditorValue(inputEl.value);
+        }
+        const fieldType = inputEl.dataset.fieldType;
+        if (fieldType === 'color') {
+          setConfigColorValue(nextConfig, inputEl.dataset.sourceKey, inputEl.dataset.colorSet, parsedValue);
+        } else {
+          nextConfig[inputEl.dataset.key] = parsedValue;
+        }
       } catch (err) {
-        errors.push(`${key}: ${err.message}`);
+        const keyName = inputEl.dataset.key || `${inputEl.dataset.sourceKey} ${inputEl.dataset.colorSet}`;
+        errors.push(`${keyName}: ${err.message}`);
       }
     });
 
@@ -4108,6 +4562,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
 
   function showConfigEditor(configObj) {
     if (!mainPanel || !configEditorPage) return;
+    configEditorSourceConfig = cloneJsonObject(configObj);
     renderConfigEditor(configObj);
     mainPanel.classList.add('config-editor-active');
     configEditorPage.style.display = 'flex';
