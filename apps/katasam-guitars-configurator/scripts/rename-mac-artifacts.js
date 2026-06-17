@@ -4,7 +4,7 @@ const path = require('path');
 const root = process.cwd();
 const pkg = require(path.join(root, 'package.json'));
 
-const APP_BASENAME = 'KATASAM-Guitars-Configurator';
+const APP_BASENAME = 'KATASAM-Configurator';
 const version = pkg.version;
 const outMakeDir = path.join(root, 'out', 'make');
 

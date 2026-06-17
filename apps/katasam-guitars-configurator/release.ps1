@@ -246,7 +246,7 @@ function Create-GitHubRelease {
     Write-Step "Creating GitHub release..."
     
     # Look for the correct portable executable in the make directory
-    $portableExePath = "out\make\KATASAM-Guitars-Configurator-v$version-portable.exe"
+    $portableExePath = "out\make\KATASAM-Configurator-v$version-portable.exe"
     
     if (Test-Path $portableExePath) {
         $exePath = $portableExePath
@@ -257,8 +257,8 @@ function Create-GitHubRelease {
         
         # Look for any portable executable in the make directory
         $possiblePaths = @(
-            "out\make\KATASAM-Guitars-Configurator-*-portable.exe",
-            "out\make\KATASAM-Guitars-Configurator.exe"
+            "out\make\KATASAM-Configurator-*-portable.exe",
+            "out\make\KATASAM-Configurator.exe"
         )
         
         $foundPath = $null
@@ -274,7 +274,7 @@ function Create-GitHubRelease {
             $exePath = $foundPath
             Write-Success "Found portable executable at: $exePath"
         } else {
-            Write-Error "Could not find portable KATASAM Guitars Configurator executable in out\make directory"
+            Write-Error "Could not find portable KATASAM Configurator executable in out\make directory"
             Write-Warning "Available files in out\make:"
             Get-ChildItem "out\make\*.exe" -ErrorAction SilentlyContinue | ForEach-Object { 
                 $sizeKB = [math]::Round($_.Length/1KB,0)
@@ -300,7 +300,7 @@ function Create-GitHubRelease {
     }
     
     if ($DryRun) {
-        Write-Info "DRY RUN: Would create GitHub release v$version with executable: KATASAM-Guitars-Configurator.exe (from $exePath)"
+        Write-Info "DRY RUN: Would create GitHub release v$version with executable: KATASAM-Configurator.exe (from $exePath)"
         return $true
     }
     
@@ -309,9 +309,9 @@ function Create-GitHubRelease {
         gh --version | Out-Null
     } catch {
         Write-Warning "GitHub CLI not available. Manual steps required:"
-        Write-Info "1. Go to: https://github.com/wattsy74/KATASAM-Guitars-Configurator/releases/new"
+        Write-Info "1. Go to: https://github.com/wattsy74/KATASAM-Configurator/releases/new"
         Write-Info "2. Tag: v$version"
-        Write-Info "3. Title: KATASAM Guitars Configurator v$version"
+        Write-Info "3. Title: KATASAM Configurator v$version"
         Write-Info "4. Upload: $exePath"
         Write-Info "5. Mark as latest release"
         return $true
@@ -337,7 +337,7 @@ function Create-GitHubRelease {
                 'U' {
                     Write-Info "Updating existing release v$version..."
                     # Create a copy with a clean name for GitHub release
-                    $cleanFileName = "KATASAM-Guitars-Configurator.exe"
+                    $cleanFileName = "KATASAM-Configurator.exe"
                     $renamedExePath = Join-Path (Get-Location) $cleanFileName
                     Copy-Item $exePath $renamedExePath -Force
                     
@@ -367,7 +367,7 @@ function Create-GitHubRelease {
         }
         
         # Create a copy with a clean name for GitHub release
-        $cleanFileName = "KATASAM-Guitars-Configurator.exe"
+        $cleanFileName = "KATASAM-Configurator.exe"
         $renamedExePath = Join-Path (Get-Location) $cleanFileName
         Copy-Item $exePath $renamedExePath -Force
         
@@ -375,14 +375,14 @@ function Create-GitHubRelease {
         
         # Generate release notes
         $releaseNotes = @"
-# KATASAM Guitars Configurator v$version
+# KATASAM Configurator v$version
 
 ## Changes
 - Bug fixes and improvements
 - Updated to version $version
 
 ## Installation
-Download the **KATASAM-Guitars-Configurator.exe** file below and run it. 
+Download the **KATASAM-Configurator.exe** file below and run it. 
 
 ✅ **Portable Application** - No installation required!  
 ✅ **Single File** - Just download and run  
@@ -397,7 +397,7 @@ If you have a previous version, the app will automatically detect this new versi
 "@
         
         # Create the release first without assets
-        gh release create "v$version" --title "KATASAM Guitars Configurator v$version" --notes $releaseNotes --latest
+        gh release create "v$version" --title "KATASAM Configurator v$version" --notes $releaseNotes --latest
         
         # Then upload the portable executable
         gh release upload "v$version" $renamedExePath --clobber
@@ -409,7 +409,7 @@ If you have a previous version, the app will automatically detect this new versi
         return $true
     } catch {
         Write-Error "Failed to create GitHub release: $($_.Exception.Message)"
-        Write-Info "You can manually create the release at: https://github.com/wattsy74/KATASAM-Guitars-Configurator/releases/new"
+        Write-Info "You can manually create the release at: https://github.com/wattsy74/KATASAM-Configurator/releases/new"
         Write-Info "Upload file: $exePath"
         return $false
     }
@@ -444,7 +444,7 @@ function Show-Summary {
 }
 
 # Main execution
-Write-Step "KATASAM Guitars Configurator Release Script"
+Write-Step "KATASAM Configurator Release Script"
 
 
 # Prompt for missing parameters interactively

@@ -219,7 +219,7 @@ ipcMain.handle('install-update', async (event, downloadPath) => {
     // Windows: create a batch script to replace the running executable
     const batchScript = `
 @echo off
-echo Updating KATASAM Guitars Configurator...
+echo Updating KATASAM Configurator...
 timeout /t 2 /nobreak >nul
 
 REM Wait for main process to exit

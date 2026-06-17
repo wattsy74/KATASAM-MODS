@@ -2,9 +2,9 @@
   "release": {
     "repository": "wattsy74/KATASAM-Guitars-Configuator-and-Firmware",
     "defaultBranch": "v3.0",
-    "artifactPattern": "KATASAM-Guitars-Configurator-v{version}-portable.exe",
+    "artifactPattern": "KATASAM-Configurator-Portable-{version}.exe",
     "releaseNoteTemplate": {
-      "title": "## 🚀 KATASAM Guitars Configurator v{version}",
+      "title": "## 🚀 KATASAM Configurator v{version}",
       "sections": [
         {
           "title": "### Features & Improvements",

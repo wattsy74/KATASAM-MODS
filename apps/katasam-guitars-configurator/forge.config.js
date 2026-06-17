@@ -6,7 +6,32 @@ module.exports = {
     asar: true,
     // Forge appends the right extension per platform (.ico on Windows, .icns on macOS)
     icon: './bg-bee-icon',
-    name: 'KATASAM Guitars Configurator',
+    name: 'KATASAM Configurator',
+    ignore: [
+      /^\/out($|\/)/,
+      /^\/dist($|\/)/,
+      /^\/build($|\/)/,
+      /^\/scripts($|\/)/,
+      /^\/\.git($|\/)/,
+      /^\/\.vscode($|\/)/,
+      /^\/README\.md$/,
+      /^\/API_DOCUMENTATION\.md$/,
+      /^\/AUTOMATED_RELEASES\.md$/,
+      /^\/AUTO_UPDATE_SYSTEM\.md$/,
+      /^\/Bug_and_Features\.md$/,
+      /^\/ROADMAP\.md$/,
+      /^\/TESTING_DOCUMENT\.md$/,
+      /^\/release-config\.json$/,
+      /^\/release\.ps1$/,
+      /^\/auto-update-presets\.ps1$/,
+      /^\/update_and_publish_firmware\.ps1$/,
+      /^\/UF2MakerScript\.ps1$/,
+      /^\/check_firmware_version\.js$/,
+      /^\/debug_boot_write_issue\.js$/,
+      /^\/console\.logs$/,
+      /^\/test_config_device_name\.json$/,
+      /^\/\.DS_Store$/
+    ],
     files:[
       'renderer/**/*',
       'serial/**/*',
@@ -21,7 +46,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
-        setupExe: 'KATASAM Guitars Configurator Setup.exe',
+        setupExe: 'KATASAM Configurator Setup.exe',
         setupIcon: './bg-bee-icon.ico',
         iconUrl: 'https://raw.githubusercontent.com/wattsy74/bgg-windows-app/main/bg-bee-icon.ico'
       },
@@ -31,7 +56,7 @@ module.exports = {
       config: {
         icon: './bg-bee-icon.ico',
         portable: {
-          artifactName: 'KATASAM-Guitars-Configurator-v${version}-portable.exe',
+          artifactName: 'KATASAM-Configurator-Portable-${version}.exe',
           requestExecutionLevel: 'user'
         }
       }
@@ -40,7 +65,7 @@ module.exports = {
       name: '@electron-forge/maker-dmg',
       platforms: ['darwin'],
       config: {
-        name: 'KATASAM Guitars Configurator',
+        name: 'KATASAM Configurator',
         icon: './bg-bee-icon.icns',
         format: 'ULFO'
       }

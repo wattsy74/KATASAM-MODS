@@ -668,7 +668,7 @@ class AutoUpdaterUI {
           <i class="fas fa-check-circle" style="font-size: 2rem; color: #28D0AF;"></i>
         </div>
         <h4 style="margin: 0 0 1rem 0; color: #28D0AF;">You're Up to Date!</h4>
-        <p style="margin: 0 0 1.5rem 0; color: #f4e4bc;">You are running the latest version of KATASAM Guitars Configurator.</p>
+        <p style="margin: 0 0 1.5rem 0; color: #f4e4bc;">You are running the latest version of KATASAM Configurator.</p>
         <p id="autoCloseCountdown" style="margin: 0 0 1rem 0; color: #1FA88F; font-size: 0.9rem;">Closing in 3 seconds...</p>
         <button id="noUpdateOkBtn" style="padding: 0.5rem 1.5rem; background: #28D0AF; color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">
           OK

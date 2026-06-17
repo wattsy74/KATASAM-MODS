@@ -123,10 +123,7 @@ A standalone desktop application for configuring and testing the BGG USB HID con
 
 ## 📚 Documentation
 
-- **[Auto-Update System](./AUTO_UPDATE_SYSTEM.md)** - Complete auto-update documentation
-- **[Automated Releases](./AUTOMATED_RELEASES.md)** - Release system documentation  
-- **[Development Roadmap](./ROADMAP.md)** - Development status and future plans
-- **[Bug Reports & Features](./Bug_and_Features.md)** - Known issues and feature requests
+Core usage and update information is documented in this README.
 
 ## 🧠 Development Status
 

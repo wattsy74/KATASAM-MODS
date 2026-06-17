@@ -578,10 +578,12 @@ select option:disabled {
   padding: 4px 8px;
   -webkit-app-region: no-drag;
 }
-#config-menu-toggle svg {
-  vertical-align: middle;
+#config-menu-toggle .menu-logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
   display: inline-block;
-  transform: translateY(0px); /* Adjust this up/down */
+  vertical-align: middle;
 }
 
 
