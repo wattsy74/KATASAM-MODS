@@ -530,7 +530,7 @@ const CONFIG_EDITOR_DEFAULT_V2 = {
     "#521C00",
     "#000091",
     "#696B00",
-    "#8c0009",
+    "#8C0009",
     "#003D00"
   ],
   "tilt_wave_enabled": true,
@@ -567,7 +567,15 @@ const CONFIG_EDITOR_DEFAULT_V2 = {
     "lastUpdated": "2025-08-13",
     "version": "3.9.26"
   },
-  "led_color": [[0, 0, 255], [0, 0, 255], [255, 77, 0], [0, 0, 255], [255, 255, 0], [255, 0, 0], [0, 128, 0]],
+  "led_color": [
+    "#0000FF",
+    "#0000FF",
+    "#FF4D00",
+    "#0000FF",
+    "#FFFF00",
+    "#FF0000",
+    "#008000"
+  ],
   "led_brightness": 1,
   "SELECT": "GP1",
   "GREEN_FRET_led": 6,
