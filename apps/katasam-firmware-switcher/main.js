@@ -263,12 +263,12 @@ function parseHardwareVersionFromText(text) {
 // Firmware URLs - v1 (pin 23) vs v2 (pin 13) hardware variants
 const FIRMWARE_URLS = {
     // Classic firmware variants
-    'Classic-v1': 'https://github.com/wattsy74/BumbleGum-Configurator-Santroller/releases/latest/download/Classic-v1.uf2',
-    'Classic-v2': 'https://github.com/wattsy74/BumbleGum-Configurator-Santroller/releases/latest/download/Classic-v2.uf2',
+    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v1.uf2',
+    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v2.uf2',
     
     // Santroller firmware variants
-    'Santroller-v1': 'https://github.com/wattsy74/BumbleGum-Configurator-Santroller/releases/latest/download/Guitarv1.uf2',
-    'Santroller-v2': 'https://github.com/wattsy74/BumbleGum-Configurator-Santroller/releases/latest/download/Guitarv2.uf2'
+    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv1.uf2',
+    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv2.uf2'
 };
 
 function createWindow() {
