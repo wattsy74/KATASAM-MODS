@@ -16,14 +16,15 @@ app.disableHardwareAcceleration();
 
 let splash;
 let mainWindow;
+const SPLASH_HOLD_MS = 4000; // Temporary: keep splash visible for visual review
 
 function createWindow() {
   // Splash screen
   splash = new BrowserWindow({
-    width: 300,
-    height: 300,
+    width: 560,
+    height: 220,
     frame: false,
-    transparent: true,
+    transparent: false,
     alwaysOnTop: true,
     resizable: false,
     show: true
@@ -49,10 +50,12 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.once('ready-to-show', () => {
-    if (splash && !splash.isDestroyed()) {
-      splash.close();
-    }
-    mainWindow.show();
+    setTimeout(() => {
+      if (splash && !splash.isDestroyed()) {
+        splash.close();
+      }
+      mainWindow.show();
+    }, SPLASH_HOLD_MS);
   });
 }
 

@@ -5,7 +5,7 @@ module.exports = {
   packagerConfig: {
     asar: true,
     // Forge appends the right extension per platform (.ico on Windows, .icns on macOS)
-    icon: './bg-bee-icon',
+    icon: './icon',
     name: 'KATASAM Configurator',
     ignore: [
       /^\/out($|\/)/,
@@ -47,14 +47,14 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       config: {
         setupExe: 'KATASAM Configurator Setup.exe',
-        setupIcon: './bg-bee-icon.ico',
-        iconUrl: 'https://raw.githubusercontent.com/wattsy74/bgg-windows-app/main/bg-bee-icon.ico'
+        setupIcon: './icon.ico',
+        iconUrl: 'https://raw.githubusercontent.com/wattsy74/KATASAM-MODS/main/apps/katasam-guitars-configurator/icon.ico'
       },
     },
     {
       name: '@rabbitholesyndrome/electron-forge-maker-portable',
       config: {
-        icon: './bg-bee-icon.ico',
+        icon: './icon.ico',
         portable: {
           artifactName: 'KATASAM-Configurator-Portable-${version}.exe',
           requestExecutionLevel: 'user'
@@ -66,7 +66,7 @@ module.exports = {
       platforms: ['darwin'],
       config: {
         name: 'KATASAM Configurator',
-        icon: './bg-bee-icon.icns',
+        icon: './icon.icns',
         format: 'ULFO'
       }
     },
