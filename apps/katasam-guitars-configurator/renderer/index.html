@@ -36,13 +36,10 @@
           <div id="config-menu" class="popup-menu">
             <button id="upload-presets-btn">Upload Presets File</button>
             <button id="download-presets-btn">Download Presets File</button>
-            <button id="config-editor-btn">Config JSON Editor</button>
-            <button id="button-config-btn">Button Config</button>
+            <button id="config-editor-btn">Config Editor</button>
+            <button id="button-config-btn" style="display:none">Button Config</button>
             <button id="whammy-cal-btn">Whammy Calibration</button>
-            <button id="toggle-hat-mode-btn">Toggle DPad/Joystick</button>
-            <button id="toggle-tilt-wave-btn">Toggle Tilt Wave Effect</button>
             <button id="rename-device-btn">Rename Device</button>
-            <button id="restore-default-btn">Restore Config to Default</button>
             <input type="file" id="presets-file-input" accept=".json" style="display:none" />
             <button id="check-updates-btn">Check for App Updates</button>
             <button id="reboot-to-bootsel">Reflash Firmware &#128274;</button>
@@ -257,8 +254,8 @@
     <!-- Min/Max draggable bars only, no sliders -->
     <div id="whammy-bar-instructions" style="margin-bottom:12px; text-align:center; color:#bbb; font-size:13px;">Drag the Min/Max bars below to set calibration or use Auto Calibrate above.</div>
     <div style="display:flex; justify-content:space-between; margin:8px 0 0 0;">
-      <span>Min: <input id="whammy-min-val" type="number" min="0" max="65534" value="0" style="width:70px; text-align:right; font-size:15px; background:#222; color:#5DE3CB; border:1px solid #bfa500; border-radius:6px; padding:2px 6px;" /></span>
-      <span>Max: <input id="whammy-max-val" type="number" min="1" max="65535" value="65535" style="width:70px; text-align:right; font-size:15px; background:#222; color:#5DE3CB; border:1px solid #bfa500; border-radius:6px; padding:2px 6px;" /></span>
+      <span>Min: <input id="whammy-min-val" type="number" min="0" max="65534" value="0" style="width:70px; text-align:right; font-size:15px; background:#222; color:#5DE3CB; border:1px solid #28D0AF; border-radius:6px; padding:2px 6px;" /></span>
+      <span>Max: <input id="whammy-max-val" type="number" min="1" max="65535" value="65535" style="width:70px; text-align:right; font-size:15px; background:#222; color:#5DE3CB; border:1px solid #28D0AF; border-radius:6px; padding:2px 6px;" /></span>
     </div>
     <!-- Reverse checkbox -->
     <div style="margin-bottom:12px;">

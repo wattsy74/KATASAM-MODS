@@ -1015,7 +1015,7 @@ select option:disabled {
   background-color: #e6b800;
 }
 
-/* Modal button styling for consistent yellow theme */
+/* Modal button styling for consistent KATASAM theme */
 .modal-btn {
   background-color: #28D0AF;
   color: #000;
@@ -1030,7 +1030,7 @@ select option:disabled {
 }
 
 .modal-btn:hover {
-  background-color: #e6b800;
+  background-color: #22b89b;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }

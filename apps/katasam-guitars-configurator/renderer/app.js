@@ -524,7 +524,15 @@ const CONFIG_EDITOR_DEFAULT_V1 = {
 };
 
 const CONFIG_EDITOR_DEFAULT_V2 = {
-  "released_color": [[255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0], [255, 191, 0]],
+  "released_color": [
+    "#454545",
+    "#454545",
+    "#521C00",
+    "#000091",
+    "#696B00",
+    "#8c0009",
+    "#003D00"
+  ],
   "tilt_wave_enabled": true,
   "joystick_y_pin": "GP27",
   "STRUM_UP": "GP15",
@@ -1984,11 +1992,19 @@ document.addEventListener('DOMContentLoaded', () => {
   let whammyConfig = null;
 
   function showWhammyModal() {
-    if (!originalConfig) return;
+    console.log('[showWhammyModal] Starting..., whammyModal=', !!whammyModal);
+    if (!whammyModal) {
+      console.error('[showWhammyModal] whammyModal element not found!');
+      return;
+    }
+    const sourceConfig = originalConfig || window.originalConfig || {};
+    if (!originalConfig && !window.originalConfig) {
+      console.warn('[showWhammyModal] No loaded config found, opening with defaults');
+    }
     whammyConfig = {
-      min: Number(originalConfig.whammy_min ?? 0),
-      max: Number(originalConfig.whammy_max ?? 65535),
-      reverse: !!originalConfig.whammy_reverse
+      min: Number(sourceConfig.whammy_min ?? 0),
+      max: Number(sourceConfig.whammy_max ?? 65535),
+      reverse: !!sourceConfig.whammy_reverse
     };
     whammyMinValue = whammyConfig.min;
     whammyMaxValue = whammyConfig.max;
@@ -2119,14 +2135,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Draw Min/Max draggable markers
     function drawBar(x, label) {
       ctx.save();
-      ctx.strokeStyle = '#bfa500';
+      ctx.strokeStyle = '#28D0AF';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(x, barY - barHeight / 2);
       ctx.lineTo(x, barY + barHeight / 2);
       ctx.stroke();
       // Draw handle
-      ctx.fillStyle = draggingBar === label ? '#5DE3CB' : '#bfa500';
+      ctx.fillStyle = draggingBar === label ? '#5DE3CB' : '#28D0AF';
       ctx.beginPath();
       ctx.arc(x, barY, 10, 0, 2 * Math.PI);
       ctx.fill();
@@ -2273,45 +2289,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Remove slider event handlers
   // Live update handlers (no sliders)
   // Update whammyMinVal/whammyMaxVal text
-  function updateWhammyVals() {
-    const minEl = document.getElementById('whammy-min-val');
-    const maxEl = document.getElementById('whammy-max-val');
-    if (minEl) minEl.textContent = whammyMinValue;
-    if (maxEl) maxEl.textContent = whammyMaxValue;
-  }
-
-  // On modal open, set values from config
-  function showWhammyModal() {
-    if (!originalConfig) return;
-    whammyConfig = {
-      min: Number(originalConfig.whammy_min ?? 0),
-      max: Number(originalConfig.whammy_max ?? 65535),
-      reverse: !!originalConfig.whammy_reverse
-    };
-    whammyMinValue = whammyConfig.min;
-    whammyMaxValue = whammyConfig.max;
-    // Set input fields to config values before showing modal
-    if (whammyMinVal) {
-      whammyMinVal.value = whammyMinValue;
-      whammyMinVal.defaultValue = whammyMinValue;
-      whammyMinVal.setAttribute('value', whammyMinValue);
-      whammyMinVal.setAttribute('min', 0);
-      whammyMinVal.setAttribute('max', whammyMaxValue - 1);
-    }
-    if (whammyMaxVal) {
-      whammyMaxVal.value = whammyMaxValue;
-      whammyMaxVal.defaultValue = whammyMaxValue;
-      whammyMaxVal.setAttribute('value', whammyMaxValue);
-      whammyMaxVal.setAttribute('min', whammyMinValue + 1);
-      whammyMaxVal.setAttribute('max', 65535);
-    }
-    whammyReverse.checked = whammyConfig.reverse;
-    // Update UI before showing modal
-    updateWhammyVals();
-    drawWhammyGraph();
-    whammyModal.style.display = 'flex';
-    startWhammyLiveFeedback();
-  }
 
   // Only reverse checkbox needs event handler
   whammyReverse?.addEventListener('change', drawWhammyGraph);
@@ -2444,15 +2421,31 @@ document.addEventListener('DOMContentLoaded', () => {
   whammyAutoCalBtn?.addEventListener('click', startAutoCalibration);
 
   whammyCalBtn?.addEventListener('click', () => {
-    closeConfigMenu();
-    showWhammyModal();
+    console.log('[whammy-cal-btn click] Starting...');
+    try {
+      closeConfigMenu();
+      console.log('[whammy-cal-btn click] closeConfigMenu complete, calling showWhammyModal');
+      if (typeof showWhammyModal === 'function') {
+        showWhammyModal();
+        console.log('[whammy-cal-btn click] showWhammyModal called successfully');
+      } else {
+        console.error('[whammy-cal-btn click] showWhammyModal is not a function');
+      }
+    } catch (err) {
+      console.error('[whammy-cal-btn click] Error:', err);
+    }
   });
   whammyCancelBtn?.addEventListener('click', hideWhammyModal);
 
   whammyApplyBtn?.addEventListener('click', async () => {
     console.log('[DEBUG] showWhammyModal called');
     if (!originalConfig) {
+      showToast('No config loaded. Connect a device and load config before applying calibration.', 'error');
       console.log('[DEBUG] showWhammyModal: originalConfig missing');
+      return;
+    }
+    if (!connectedPort) {
+      showToast('No device connected. Connect a device before applying calibration.', 'error');
       return;
     }
     // Update config
