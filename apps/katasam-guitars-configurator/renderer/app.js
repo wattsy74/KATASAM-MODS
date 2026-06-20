@@ -13,7 +13,7 @@ window.manuallyRefreshDeviceName = async function() {
   showToast('Refreshing device name...', 'info');
   
   requestDeviceNameDirect((deviceName) => {
-    if (deviceName && deviceName.trim()) {
+    if (isLikelyValidDeviceName(deviceName)) {
       console.log('[manuallyRefreshDeviceName] Got device name:', deviceName);
       activeDevice.displayName = deviceName.trim();
       activeDevice.nameNeedsRefresh = false;
@@ -31,7 +31,7 @@ window.manuallyRefreshDeviceName = async function() {
       
       showToastSuccess('Device name refreshed: ' + deviceName);
     } else {
-      console.warn('[manuallyRefreshDeviceName] Failed to get device name');
+      console.warn('[manuallyRefreshDeviceName] Failed to get valid device name');
       showToastError('Failed to get device name');
     }
   });
@@ -113,7 +113,26 @@ window.manuallyLoadDeviceFiles = async function() {
 // These functions use the efficient READUID, READVERSION, READDEVICENAME commands
 // instead of reading entire files, eliminating the "cycling through files" behavior
 
+function isLikelyValidDeviceName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 50) return false;
+  if (trimmed.includes('\\n') || trimmed.includes('\\r') || trimmed.includes(':')) return false;
+  if (trimmed.includes('.json') || trimmed.includes('.py')) return false;
+  if (/^(ACK|ERROR|END|READDEVICENAME|READUID|READVERSION|DETECTPIN|PINDETECT|FIRMWARE_READY)/i.test(trimmed)) return false;
+  return true;
+}
+
+function isHardwareDetectionActive() {
+  return !!window._hardwareDetectInProgress;
+}
+
 function requestDeviceFirmwareVersionDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceFirmwareVersionDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.log('❌ No connected port for direct firmware version request');
     return callback(null);
@@ -184,6 +203,11 @@ function requestDeviceFirmwareVersionDirect(callback) {
 }
 
 function requestDeviceUidDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceUidDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.warn('[requestDeviceUidDirect] No device connected.');
     callback(null);
@@ -256,6 +280,11 @@ function requestDeviceUidDirect(callback) {
 }
 
 function requestDeviceNameDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceNameDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.warn('[requestDeviceNameDirect] No connected port');
     return callback(null);
@@ -293,6 +322,18 @@ function requestDeviceNameDirect(callback) {
       const lines = buffer.split(/[\r\n]+/);
       for (const line of lines) {
         const trimmed = line.trim();
+
+        // Prefer explicit name prefixes if firmware returns them.
+        if (trimmed.startsWith('DEVICENAME:') || trimmed.startsWith('DEVICE_NAME:')) {
+          const explicitName = trimmed.split(':').slice(1).join(':').trim();
+          if (isLikelyValidDeviceName(explicitName)) {
+            console.log('[requestDeviceNameDirect] Found explicit device name:', explicitName);
+            callback(explicitName);
+            return;
+          }
+          continue;
+        }
+
         // Skip empty lines, END marker, error messages, ACK responses, and UID-like strings
         if (!trimmed || 
             trimmed === 'END' ||
@@ -301,22 +342,17 @@ function requestDeviceNameDirect(callback) {
             /^[0-9A-Fa-f]{16}$/.test(trimmed)) { // Skip UID format strings
           continue;
         }
-        
-        // Additional validation: device names should be reasonable
-        if (trimmed.length > 50 || trimmed.includes('.json') || trimmed.includes('.py')) {
-          console.warn('[requestDeviceNameDirect] Skipping invalid device name format:', trimmed);
-          continue;
+
+        if (isLikelyValidDeviceName(trimmed)) {
+          console.log('[requestDeviceNameDirect] Found device name:', trimmed);
+          callback(trimmed);
+          return;
         }
-        
-        // This should be the device name
-        console.log('[requestDeviceNameDirect] Found device name:', trimmed);
-        callback(trimmed);
-        return;
       }
       
       // If we get here, no valid device name was found
       console.warn('[requestDeviceNameDirect] No valid device name found in response, buffer was:', JSON.stringify(buffer));
-      callback('Unknown Device');
+      callback(null);
     }
   };
   
@@ -581,6 +617,356 @@ const CONFIG_EDITOR_DEFAULT_V2 = {
   "whammy_reverse": false
 };
 
+function getHardwareDefaultsConfig(hardwareVersion) {
+  return cloneJsonObject(hardwareVersion === 'v2' ? CONFIG_EDITOR_DEFAULT_V2 : CONFIG_EDITOR_DEFAULT_V1);
+}
+
+const HARDWARE_DETECT_BUILD = 'hdetect-20260620-4';
+
+function normalizePinName(pin) {
+  const raw = String(pin || '').trim().toUpperCase();
+  const gpMatch = raw.match(/^GP0*([0-9]+)$/);
+  if (gpMatch) {
+    return `GP${Number(gpMatch[1])}`;
+  }
+  return raw;
+}
+
+function appendHardwareDetectTrace(message) {
+  if (!window.__hardwareDetectTrace) {
+    window.__hardwareDetectTrace = [];
+  }
+  const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+  window.__hardwareDetectTrace.push(line);
+  if (window.__hardwareDetectTrace.length > 40) {
+    window.__hardwareDetectTrace.shift();
+  }
+  console.log(`[hardware-detect][trace] ${message}`);
+}
+
+function getHardwareDetectTraceText(maxLines = 10) {
+  const lines = Array.isArray(window.__hardwareDetectTrace) ? window.__hardwareDetectTrace : [];
+  if (!lines.length) return 'No detection trace available.';
+  const priorityLines = lines.filter(line =>
+    !line.includes('State check:') ||
+    line.includes('Build:') ||
+    line.includes('using direct diagnostics loop') ||
+    line.includes('Direct diagnostics polling started') ||
+    line.includes('DIAG force TX:') ||
+    line.includes('DIAG RX ') ||
+    line.includes('Diagnostics pollers not initialized') ||
+    line.includes('Diagnostics pin/hat polling started') ||
+    line.includes('Detection started') ||
+    line.includes('Port selected:') ||
+    line.includes('timeout after') ||
+    line.includes('finished with') ||
+    line.includes('Detection failed')
+  );
+  const tailLines = lines.slice(-Math.max(0, maxLines - Math.min(priorityLines.length, Math.ceil(maxLines / 2))));
+  const merged = [...priorityLines, ...tailLines].slice(-maxLines);
+  return merged.join('\n');
+}
+
+function showHardwareDetectStatusModal(message, title = 'Hardware Detection') {
+  const modal = document.getElementById('custom-confirm-modal');
+  const titleEl = modal?.querySelector('h3');
+  const messageEl = document.getElementById('custom-confirm-message');
+  const yesBtn = document.getElementById('custom-confirm-yes');
+  const noBtn = document.getElementById('custom-confirm-no');
+
+  if (!modal || !messageEl || !yesBtn || !noBtn) {
+    return () => {};
+  }
+
+  const prevTitle = titleEl ? titleEl.textContent : '';
+  const prevMessage = messageEl.textContent;
+  const prevYesLabel = yesBtn.textContent;
+  const prevNoLabel = noBtn.textContent;
+  const prevYesDisplay = yesBtn.style.display;
+  const prevNoDisplay = noBtn.style.display;
+
+  if (titleEl) titleEl.textContent = title;
+  messageEl.textContent = message;
+  yesBtn.style.display = 'none';
+  noBtn.style.display = 'none';
+  modal.style.display = 'flex';
+
+  return () => {
+    modal.style.display = 'none';
+    if (titleEl) titleEl.textContent = prevTitle;
+    messageEl.textContent = prevMessage;
+    yesBtn.textContent = prevYesLabel;
+    noBtn.textContent = prevNoLabel;
+    yesBtn.style.display = prevYesDisplay;
+    noBtn.style.display = prevNoDisplay;
+  };
+}
+
+function parsePinReadResponse(str, validKeys) {
+  const pinMatch = str.match(/PIN:([A-Z_]+):(\d+)/);
+  if (!pinMatch) return null;
+  const key = pinMatch[1];
+  const val = pinMatch[2];
+  if (Array.isArray(validKeys) && !validKeys.includes(key)) return null;
+  return { key, val };
+}
+
+function inferCurrentConfigVersion() {
+  const config = originalConfig || window.originalConfig || window.multiDeviceManager?.getActiveDevice?.()?.config;
+  const yellowPin = normalizePinName(config?.YELLOW_FRET);
+  if (yellowPin === normalizePinName(CONFIG_EDITOR_DEFAULT_V1.YELLOW_FRET)) return 'v1';
+  if (yellowPin === normalizePinName(CONFIG_EDITOR_DEFAULT_V2.YELLOW_FRET)) return 'v2';
+  return null;
+}
+
+function runMiddleFretDetectAttempt(port, attemptIndex, attemptTimeoutMs = 2600) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let lastStateSnapshot = '';
+    let stateSampleCounter = 0;
+    const previousConnectedPort = connectedPort;
+    const detectKeys = ['YELLOW_FRET', 'TILT', 'LEFT'];
+    let pollKeyIndex = 0;
+    let localPollIntervalId = null;
+
+    appendHardwareDetectTrace(`Attempt ${attemptIndex}: using direct diagnostics loop on ${port?.path || 'unknown-path'}`);
+
+    if (connectedPort !== port) {
+      connectedPort = port;
+      appendHardwareDetectTrace(`connectedPort rebound to active port: ${port.path || 'unknown-path'}`);
+    }
+
+    appendHardwareDetectTrace(`Attempt ${attemptIndex}: starting direct diagnostics polling`);
+
+    const localDiagHandler = (data) => {
+      try {
+        const str = data.toString().trim();
+        const parsed = parsePinReadResponse(str, detectKeys);
+        if (!parsed) return;
+
+        if (parsed.key === 'LEFT') {
+          window.__diagHatStatusMap = {
+            ...(window.__diagHatStatusMap || {}),
+            LEFT: parsed.val
+          };
+          appendHardwareDetectTrace(`DIAG RX hat: ${parsed.key}=${parsed.val}`);
+          return;
+        }
+
+        window.__diagPinStatusMap = {
+          ...(window.__diagPinStatusMap || {}),
+          [parsed.key]: parsed.val
+        };
+        appendHardwareDetectTrace(`DIAG RX pin: ${parsed.key}=${parsed.val}`);
+      } catch (err) {
+        appendHardwareDetectTrace(`DIAG local handler error: ${err.message || 'unknown error'}`);
+      }
+    };
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (localPollIntervalId) {
+        clearInterval(localPollIntervalId);
+        localPollIntervalId = null;
+      }
+      port.off('data', localDiagHandler);
+      clearInterval(stateCheckIntervalId);
+      clearTimeout(timeoutId);
+      connectedPort = previousConnectedPort;
+      appendHardwareDetectTrace('connectedPort restored after detection attempt');
+      appendHardwareDetectTrace(`Attempt ${attemptIndex}: finished with '${result || 'none'}'`);
+      resolve(result);
+    };
+
+    const tryResolve = () => {
+      const pinStates = window.__diagPinStatusMap || {};
+      const hatStates = window.__diagHatStatusMap || {};
+
+      if (hatStates.LEFT === '1') {
+        appendHardwareDetectTrace('Physical middle fret mapped to LEFT -> hardware V2');
+        finish('v2');
+        return true;
+      }
+      if (pinStates.TILT === '1') {
+        appendHardwareDetectTrace('Physical middle fret mapped to TILT -> hardware V1');
+        finish('v1');
+        return true;
+      }
+      if (pinStates.YELLOW_FRET === '1') {
+        const configVersion = inferCurrentConfigVersion();
+        appendHardwareDetectTrace(`Physical middle fret mapped to YELLOW_FRET with current config '${configVersion || 'unknown'}'`);
+        if (configVersion === 'v1' || configVersion === 'v2') {
+          finish(configVersion);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    window.__diagPinStatusMap = {};
+    window.__diagHatStatusMap = {};
+    port.off('data', localDiagHandler);
+    port.on('data', localDiagHandler);
+
+    localPollIntervalId = setInterval(() => {
+      if (!port || port.isOpen === false) {
+        appendHardwareDetectTrace(`Direct diagnostics poll skipped: port open=${port?.isOpen === false ? 'no' : 'unknown'}`);
+        return;
+      }
+
+      const key = detectKeys[pollKeyIndex];
+      pollKeyIndex = (pollKeyIndex + 1) % detectKeys.length;
+
+      try {
+        port.write(`READPIN:${key}\n`);
+        appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
+      } catch (err) {
+        appendHardwareDetectTrace(`DIAG force write error (${key}): ${err.message || 'unknown error'}`);
+      }
+    }, 30);
+
+    appendHardwareDetectTrace('Direct diagnostics polling started');
+
+    const stateCheckIntervalId = setInterval(() => {
+      const pinStates = window.__diagPinStatusMap || {};
+      const hatStates = window.__diagHatStatusMap || {};
+      const snapshot = `YELLOW=${pinStates.YELLOW_FRET || '-'} LEFT=${hatStates.LEFT || '-'} TILT=${pinStates.TILT || '-'}`;
+      stateSampleCounter += 1;
+      if (snapshot !== lastStateSnapshot || stateSampleCounter % 8 === 0) {
+        appendHardwareDetectTrace(`State check: ${snapshot}`);
+        lastStateSnapshot = snapshot;
+      }
+      tryResolve();
+    }, 80);
+
+    const timeoutId = setTimeout(() => {
+      clearInterval(stateCheckIntervalId);
+      appendHardwareDetectTrace(`Attempt ${attemptIndex}: timeout after ${attemptTimeoutMs}ms`);
+      finish(null);
+    }, attemptTimeoutMs);
+  });
+}
+
+async function detectHardwareVersionFromMiddleFretSignal(timeoutMs = 9000) {
+  const activePort = connectedPort || window.multiDeviceManager?.getActiveDevice?.()?.port;
+  if (!activePort) return null;
+
+  window.__hardwareDetectTrace = [];
+  appendHardwareDetectTrace(`Build: ${HARDWARE_DETECT_BUILD}`);
+  appendHardwareDetectTrace(`Detection started (timeout=${timeoutMs}ms)`);
+  appendHardwareDetectTrace(`Port selected: ${activePort.path || 'unknown-path'}`);
+
+  if (detectHardwareVersionFromMiddleFretSignal.inProgress) {
+    console.warn('[hardware-detect] Detection already in progress');
+    appendHardwareDetectTrace('Skipped: detection already in progress');
+    return null;
+  }
+
+  detectHardwareVersionFromMiddleFretSignal.inProgress = true;
+  window._hardwareDetectInProgress = true;
+  const manager = window.multiDeviceManager;
+  const shouldResumeScanning = !!manager?.pauseScanning;
+  if (shouldResumeScanning) {
+    manager.pauseScanning();
+    appendHardwareDetectTrace('Scanning paused');
+  }
+
+  const runDetection = async () => {
+    const attemptWindowMs = Math.max(2600, timeoutMs);
+
+    try {
+      if (window.multiDeviceManager?.flushSerialBuffer) {
+        await window.multiDeviceManager.flushSerialBuffer(activePort);
+        appendHardwareDetectTrace('Serial buffer flushed before detection');
+      }
+    } catch (flushErr) {
+      console.warn('[hardware-detect] Buffer flush failed:', flushErr);
+      appendHardwareDetectTrace(`Buffer flush failed: ${flushErr.message || 'unknown error'}`);
+    }
+
+    appendHardwareDetectTrace(`Current config version inferred as '${inferCurrentConfigVersion() || 'unknown'}'`);
+    const result = await runMiddleFretDetectAttempt(activePort, 1, attemptWindowMs);
+    if (result === 'v1' || result === 'v2') {
+      appendHardwareDetectTrace(`Detection resolved as ${result.toUpperCase()}`);
+      return result;
+    }
+
+    appendHardwareDetectTrace('Detection failed for this try');
+    return null;
+  };
+
+  try {
+    if (window.multiDeviceManager?.pauseScanningDuringOperation) {
+      return await window.multiDeviceManager.pauseScanningDuringOperation(runDetection);
+    }
+    return await runDetection();
+  } finally {
+    if (shouldResumeScanning && manager?.resumeScanning) {
+      manager.resumeScanning();
+      appendHardwareDetectTrace('Scanning resumed');
+    }
+    detectHardwareVersionFromMiddleFretSignal.inProgress = false;
+    window._hardwareDetectInProgress = false;
+  }
+}
+
+async function detectHardwareVersionFromMiddleFretPrompt(contextLabel = 'defaults') {
+  await customAlert(
+    'Click OK, then press and hold the Middle Fret button so we can detect and apply the correct config.',
+    { title: 'Hardware Detection' }
+  );
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const closeDetectingStatus = showHardwareDetectStatusModal(
+      'Hardware Detection\n\nDetecting now...\n\nKeep holding the Middle Fret button until this step completes.'
+    );
+    const autoDetectedVersion = await detectHardwareVersionFromMiddleFretSignal();
+    closeDetectingStatus();
+
+    if (autoDetectedVersion === 'v1' || autoDetectedVersion === 'v2') {
+      return autoDetectedVersion;
+    }
+
+    const retryDetection = await customConfirmWithLabels(
+      'No Middle Fret input was detected.\n\nPlease press and hold the Middle Fret button, then choose Retry Detection.',
+      {
+        title: 'Hardware Detection',
+        yesLabel: 'Retry Detection',
+        noLabel: 'Cancel'
+      }
+    );
+
+    if (!retryDetection) {
+      return null;
+    }
+  }
+}
+
+async function applyDetectedHardwareDefaultsToSession(contextLabel = 'defaults') {
+  const detectedVersion = await detectHardwareVersionFromMiddleFretPrompt(contextLabel);
+  if (detectedVersion !== 'v1' && detectedVersion !== 'v2') {
+    return null;
+  }
+  const defaultsConfig = getHardwareDefaultsConfig(detectedVersion);
+
+  originalConfig = cloneJsonObject(defaultsConfig);
+  window.originalConfig = cloneJsonObject(defaultsConfig);
+
+  if (typeof applyConfig === 'function') {
+    applyConfig(originalConfig);
+  }
+
+  configDirty = true;
+  const applyBtn = document.getElementById('apply-config-btn');
+  if (applyBtn) applyBtn.style.display = 'inline-block';
+
+  await customAlert(
+    `Detected ${detectedVersion.toUpperCase()} hardware.\n\nLoaded ${detectedVersion.toUpperCase()} defaults into session.`
+  );
+  return { detectedVersion, defaultsConfig };
+}
+
 function cloneJsonObject(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -680,12 +1066,16 @@ function initializeDeviceSelector() {
       devices.forEach(device => {
         const isActive = window.multiDeviceManager.activeDevice && window.multiDeviceManager.activeDevice.id === device.id;
         const isConnected = device.isConnected;
+        const rawName = device.getDisplayName ? device.getDisplayName() : (device.displayName || device.id || 'Unknown Device');
+        const safeName = isLikelyValidDeviceName(rawName)
+          ? rawName
+          : ((device.portInfo && (device.portInfo.friendlyName || device.portInfo.path)) || device.id || 'Unknown Device');
         html += `<div style="display:flex; align-items:center; justify-content:space-between; background:${isActive ? '#333a' : 'none'}; border-radius:6px; margin-bottom:6px; padding:6px 8px;">`;
-        html += `<span style="display:flex; align-items:center;">`;
+        html += `<span style="display:flex; align-items:center; min-width:0; flex:1;">`;
         html += `<span style="width:14px; height:14px; border-radius:50%; background:${isConnected ? '#2ecc40' : '#e74c3c'}; display:inline-block; margin-right:8px;"></span>`;
-        html += `<span style="font-weight:bold; margin-right:8px;">${device.getDisplayName ? device.getDisplayName() : device.displayName || device.id}</span>`;
+        html += `<span style="font-weight:bold; margin-right:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:520px;">${safeName}</span>`;
         html += `</span>`;
-        html += `<span>`;
+        html += `<span style="flex-shrink:0;">`;
         // Identify button (always shown)
         html += `<button class="device-identify-btn" data-id="${device.id}" style="background:#f1c40f; color:#222; border:none; border-radius:4px; padding:4px 10px; margin-right:6px; cursor:pointer;">Identify</button>`;
         if (isConnected && isActive) {
@@ -987,17 +1377,87 @@ function customConfirm(message) {
   });
 }
 
-function customAlert(message) {
+function customConfirmWithLabels(message, {
+  title = 'Confirm Action',
+  yesLabel = 'Yes',
+  noLabel = 'No'
+} = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('custom-confirm-modal');
+    const titleEl = modal?.querySelector('h3');
+    const messageEl = document.getElementById('custom-confirm-message');
+    const yesBtn = document.getElementById('custom-confirm-yes');
+    const noBtn = document.getElementById('custom-confirm-no');
+    if (!modal || !messageEl || !yesBtn || !noBtn) {
+      resolve(false);
+      return;
+    }
+
+    const prevTitle = titleEl ? titleEl.textContent : null;
+    const prevYes = yesBtn.textContent;
+    const prevNo = noBtn.textContent;
+
+    if (titleEl) titleEl.textContent = title;
+    messageEl.textContent = message;
+    yesBtn.textContent = yesLabel;
+    noBtn.textContent = noLabel;
+    modal.style.display = 'flex';
+
+    function cleanup() {
+      modal.style.display = 'none';
+      if (titleEl && prevTitle !== null) titleEl.textContent = prevTitle;
+      yesBtn.textContent = prevYes;
+      noBtn.textContent = prevNo;
+      yesBtn.removeEventListener('click', handleYes);
+      noBtn.removeEventListener('click', handleNo);
+      document.removeEventListener('keydown', handleKeydown);
+    }
+
+    function handleYes() {
+      cleanup();
+      resolve(true);
+    }
+
+    function handleNo() {
+      cleanup();
+      resolve(false);
+    }
+
+    function handleKeydown(e) {
+      if (e.key === 'Enter') {
+        handleYes();
+      } else if (e.key === 'Escape') {
+        handleNo();
+      }
+    }
+
+    yesBtn.addEventListener('click', handleYes);
+    noBtn.addEventListener('click', handleNo);
+    document.addEventListener('keydown', handleKeydown);
+    yesBtn.focus();
+  });
+}
+
+function customAlert(message, { title = null } = {}) {
   return new Promise((resolve) => {
     const modal = document.getElementById('custom-alert-modal');
+    const titleEl = modal?.querySelector('h3');
     const messageEl = document.getElementById('custom-alert-message');
     const okBtn = document.getElementById('custom-alert-ok');
+
+    const prevTitle = titleEl ? titleEl.textContent : null;
+    if (titleEl && title) {
+      titleEl.textContent = title;
+    }
     
     messageEl.textContent = message;
     modal.style.display = 'flex';
     
     function cleanup() {
       modal.style.display = 'none';
+      if (titleEl && prevTitle !== null) {
+        titleEl.textContent = prevTitle;
+      }
       okBtn.removeEventListener('click', handleOk);
       document.removeEventListener('keydown', handleKeydown);
     }
@@ -2875,8 +3335,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const detectedVersion = readBootselHardwareVersion(drivePath);
     if (detectedVersion) return detectedVersion;
 
-    const useV2 = await customConfirm('Select firmware hardware variant.\n\nChoose Yes for V2 hardware.\nChoose No for V1 hardware.');
-    return useV2 ? 'v2' : 'v1';
+    console.log('[FirmwareDownload] No BOOTSEL hardware marker found; defaulting firmware variant to V2');
+    return 'v2';
   }
 
   function pickFirmwareAssetFromRelease(release, hardwareVersion) {
@@ -3110,7 +3570,7 @@ document.addEventListener('DOMContentLoaded', () => {
           window.multiDeviceManager.resumeScanning();
         }
         detectRebootedController();
-      }, 5000); // Increased from 3000 to 5000ms to give more time for device to reboot
+      }, 1500);
     } catch (err) {
       console.error("❌ Flash error:", err);
       showToast("Flash failed ❌", "error");
@@ -3163,7 +3623,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Set as active device if not already
             if (window.multiDeviceManager.setActiveDevice) {
-              await window.multiDeviceManager.setActiveDevice(device);
+              window.multiDeviceManager.setActiveDevice(device);
             }
             
             showToast("Controller rebooted and ready 🎉", "success");
@@ -3172,6 +3632,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update UI
             if (window.updateActiveButtonText) {
               window.updateActiveButtonText(device);
+            }
+
+            try {
+              await applyDetectedHardwareDefaultsToSession('post-flash-reconnect');
+            } catch (defaultsErr) {
+              console.warn('[post-flash] Failed to apply detected defaults:', defaultsErr);
             }
             
             return; // Success - stop polling
@@ -3194,6 +3660,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Update UI
                 if (window.updateActiveButtonText) {
                   window.updateActiveButtonText(device);
+                }
+
+                try {
+                  await applyDetectedHardwareDefaultsToSession('post-flash-connect');
+                } catch (defaultsErr) {
+                  console.warn('[post-flash] Failed to apply detected defaults:', defaultsErr);
                 }
                 
                 return; // Success - stop polling
@@ -4350,8 +4822,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
   const configEditorFields = document.getElementById('config-editor-fields');
   const configEditorBackBtn = document.getElementById('config-editor-back-btn');
   const configEditorApplyBtn = document.getElementById('config-editor-apply-btn');
-  const configEditorV1Btn = document.getElementById('config-editor-v1-btn');
-  const configEditorV2Btn = document.getElementById('config-editor-v2-btn');
+  const configEditorAutoDefaultsBtn = document.getElementById('config-editor-auto-defaults-btn');
   const configEditorReloadBtn = document.getElementById('config-editor-reload-btn');
   let configEditorSourceConfig = null;
 
@@ -4908,14 +5379,11 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     showToast('Editor reloaded from current config', 'info');
   });
 
-  configEditorV1Btn?.addEventListener('click', () => {
-    showConfigEditor(cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1));
-    showToast('Loaded V1 defaults in editor', 'info');
-  });
-
-  configEditorV2Btn?.addEventListener('click', () => {
-    showConfigEditor(cloneJsonObject(CONFIG_EDITOR_DEFAULT_V2));
-    showToast('Loaded V2 defaults in editor', 'info');
+  configEditorAutoDefaultsBtn?.addEventListener('click', async () => {
+    const result = await applyDetectedHardwareDefaultsToSession('config-editor-defaults');
+    if (!result || !result.defaultsConfig) return;
+    showConfigEditor(cloneJsonObject(result.defaultsConfig));
+    showToast(`Loaded ${result.detectedVersion.toUpperCase()} defaults in editor`, 'info');
   });
 
   configEditorApplyBtn?.addEventListener('click', async () => {
@@ -5886,6 +6354,7 @@ if (window.multiDeviceManager) {
       const keys = buttonInputs.map(b => b.key);
       console.log('Starting pin status polling for keys:', keys);
       pinStatusInterval = setInterval(() => {
+        if (isHardwareDetectionActive()) return;
         keys.forEach(key => {
           console.log(`Sending READPIN:${key}`);
           connectedPort.write(`READPIN:${key}\n`);
@@ -6827,11 +7296,21 @@ if (window.multiDeviceManager) {
              connectedPort.writable && 
              !connectedPort.closed;
     }
+
+      function isForcePollingReady() {
+        return connectedPort && connectedPort.isOpen && !connectedPort.closed;
+      }
     
     // Define all polling start/stop functions
-    window.startDiagPinStatusPolling = function() {
+    window.startDiagPinStatusPolling = function(force = false) {
       const checkbox = document.getElementById('diag-input-enable');
-      if (!connectedPort || !checkbox || !checkbox.checked) return;
+      if (force) {
+        appendHardwareDetectTrace(`Pin poller start: force=true port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} readable=${connectedPort?.readable ? 'yes' : 'no'} writable=${connectedPort?.writable ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
+      }
+      if (!connectedPort || (!force && (!checkbox || !checkbox.checked))) {
+        if (force) appendHardwareDetectTrace('Pin poller start skipped: missing connectedPort or checkbox disabled');
+        return;
+      }
       stopDiagPinStatusPolling();
       
       const buttonInputsRow1 = [
@@ -6851,17 +7330,27 @@ if (window.multiDeviceManager) {
       
       const keys = [...buttonInputsRow1, ...buttonInputsRow2].map(b => b.key);
       let currentKeyIndex = 0;
+      let skippedTickCount = 0;
       
       // Round-robin polling: poll one button at a time to prevent serial buffer overflow
       diagPinStatusInterval = setInterval(() => {
-        if (document.getElementById('diag-input-enable')?.checked && isConnectionHealthy()) {
+        const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+        if ((force || document.getElementById('diag-input-enable')?.checked) && pollingAllowed) {
+          if (!force && isHardwareDetectionActive()) return;
           try {
             const key = keys[currentKeyIndex];
             connectedPort.write(`READPIN:${key}\n`);
+            if (force) appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
             currentKeyIndex = (currentKeyIndex + 1) % keys.length;
           } catch (err) {
             console.warn('[DIAG] Pin status polling write error:', err);
+            if (force) appendHardwareDetectTrace(`DIAG force pin write error: ${err.message || 'unknown error'}`);
             // Don't stop polling on individual write errors, just skip this cycle
+          }
+        } else if (force) {
+          skippedTickCount += 1;
+          if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+            appendHardwareDetectTrace(`Pin poller tick skipped: port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} readable=${connectedPort?.readable ? 'yes' : 'no'} writable=${connectedPort?.writable ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
           }
         }
       }, 20); // Faster individual polls but only one button at a time
@@ -6881,9 +7370,15 @@ if (window.multiDeviceManager) {
       }
     };
     
-    window.startDiagHatStatusPolling = function() {
+    window.startDiagHatStatusPolling = function(force = false) {
       const checkbox = document.getElementById('diag-hat-enable');
-      if (!connectedPort || !originalConfig || !checkbox || !checkbox.checked) return;
+      if (force) {
+        appendHardwareDetectTrace(`Hat poller start: force=true port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} hatMode=${originalConfig?.hat_mode || 'missing-config'}`);
+      }
+      if (!connectedPort || !originalConfig || (!force && (!checkbox || !checkbox.checked))) {
+        if (force) appendHardwareDetectTrace('Hat poller start skipped: missing connectedPort, missing originalConfig, or checkbox disabled');
+        return;
+      }
       stopDiagHatStatusPolling();
       
       const hatMode = originalConfig.hat_mode || 'joystick';
@@ -6892,26 +7387,46 @@ if (window.multiDeviceManager) {
         // Round-robin polling for DPAD buttons including GUIDE
         const dpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
         let currentDpadIndex = 0;
+        let skippedTickCount = 0;
         
         diagHatStatusInterval = setInterval(() => {
-          if (document.getElementById('diag-hat-enable')?.checked && isConnectionHealthy()) {
+          const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+          if ((force || document.getElementById('diag-hat-enable')?.checked) && pollingAllowed) {
+            if (!force && isHardwareDetectionActive()) return;
             try {
               const key = dpadKeys[currentDpadIndex];
               connectedPort.write(`READPIN:${key}\n`);
+              if (force) appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
               currentDpadIndex = (currentDpadIndex + 1) % dpadKeys.length;
             } catch (err) {
               console.warn('[DIAG] Hat status polling write error:', err);
+              if (force) appendHardwareDetectTrace(`DIAG force hat write error: ${err.message || 'unknown error'}`);
+            }
+          } else if (force) {
+            skippedTickCount += 1;
+            if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+              appendHardwareDetectTrace(`Hat poller tick skipped: mode=dpad port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
             }
           }
         }, 25); // Slower than individual pin polling since there are fewer buttons
       } else {
         // Poll joystick values - single command so no round-robin needed
+        let skippedTickCount = 0;
         diagHatStatusInterval = setInterval(() => {
-          if (document.getElementById('diag-hat-enable')?.checked && isConnectionHealthy()) {
+          const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+          if ((force || document.getElementById('diag-hat-enable')?.checked) && pollingAllowed) {
+            if (!force && isHardwareDetectionActive()) return;
             try {
               connectedPort.write('READJOYSTICK\n');
+              if (force) appendHardwareDetectTrace('DIAG force TX: READJOYSTICK');
             } catch (err) {
               console.warn('[DIAG] Joystick polling write error:', err);
+              if (force) appendHardwareDetectTrace(`DIAG force joystick write error: ${err.message || 'unknown error'}`);
+            }
+          } else if (force) {
+            skippedTickCount += 1;
+            if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+              appendHardwareDetectTrace(`Hat poller tick skipped: mode=joystick port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
             }
           }
         }, 30); // Slightly slower for joystick to reduce data flood
@@ -6939,6 +7454,7 @@ if (window.multiDeviceManager) {
       
       diagWhammyInterval = setInterval(() => {
         if (document.getElementById('diag-whammy-enable')?.checked && isConnectionHealthy()) {
+          if (isHardwareDetectionActive()) return;
           try {
             connectedPort.write('READWHAMMY\n');
           } catch (err) {
@@ -7168,23 +7684,19 @@ if (window.multiDeviceManager) {
       const str = data.toString().trim();
       
       // Validate and parse PIN data
-      const pinMatch = str.match(/PIN:([A-Z_]+):(\d+)/);
-      if (pinMatch) {
+      const validKeys = ['GREEN_FRET', 'RED_FRET', 'YELLOW_FRET', 'BLUE_FRET', 'ORANGE_FRET', 
+                        'STRUM_UP', 'STRUM_DOWN', 'START', 'SELECT', 'TILT'];
+      const parsed = parsePinReadResponse(str, validKeys);
+      if (parsed) {
+        if (isHardwareDetectionActive()) appendHardwareDetectTrace(`DIAG RX pin: ${parsed.key}=${parsed.val}`);
         // Hide buffer clearing popover when pin data arrives
         if (bufferClearingActive) {
           hideBufferClearingPopover();
         }
         
-        const key = pinMatch[1];
-        const val = pinMatch[2];
-        
-        // Validate the key is one we expect
-        const validKeys = ['GREEN_FRET', 'RED_FRET', 'YELLOW_FRET', 'BLUE_FRET', 'ORANGE_FRET', 
-                          'STRUM_UP', 'STRUM_DOWN', 'START', 'SELECT', 'TILT'];
-        if (validKeys.includes(key)) {
-          diagPinStatusMap[key] = val;
-          updateDiagInputBoxes();
-        }
+        diagPinStatusMap[parsed.key] = parsed.val;
+        window.__diagPinStatusMap = { ...diagPinStatusMap };
+        updateDiagInputBoxes();
       }
       
       // Also hide popover for PREVIEWLED confirmations (LED test commands)
@@ -7245,22 +7757,18 @@ if (window.multiDeviceManager) {
       const str = data.toString().trim();
       
       // Handle DPAD pin responses (PIN:UP:1, etc.) and GUIDE button
-      const pinMatch = str.match(/PIN:(UP|DOWN|LEFT|RIGHT|GUIDE):(\d+)/);
-      if (pinMatch) {
+      const validDpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
+      const parsed = parsePinReadResponse(str, validDpadKeys);
+      if (parsed) {
+        if (isHardwareDetectionActive()) appendHardwareDetectTrace(`DIAG RX hat: ${parsed.key}=${parsed.val}`);
         // Hide buffer clearing popover when hat pin data arrives
         if (bufferClearingActive) {
           hideBufferClearingPopover();
         }
         
-        const key = pinMatch[1];
-        const val = pinMatch[2];
-        
-        // Validate the key is a valid D-pad key
-        const validDpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
-        if (validDpadKeys.includes(key)) {
-          diagHatStatusMap[key] = val;
-          updateDiagHatStatus();
-        }
+        diagHatStatusMap[parsed.key] = parsed.val;
+        window.__diagHatStatusMap = { ...diagHatStatusMap };
+        updateDiagHatStatus();
         return;
       }
       

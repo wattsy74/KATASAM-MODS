@@ -14,6 +14,16 @@ let updateDeviceSelector = () => {};
 let requestNextFile = () => {};
 let showToast = () => {};
 
+function isLikelyValidDeviceName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 50) return false;
+  if (trimmed.includes('\\n') || trimmed.includes('\\r') || trimmed.includes(':')) return false;
+  if (trimmed.includes('.json') || trimmed.includes('.py')) return false;
+  if (/^(ACK|ERROR|END|READDEVICENAME|READUID|READVERSION|DETECTPIN|PINDETECT|FIRMWARE_READY|UNKNOWN)/i.test(trimmed)) return false;
+  return true;
+}
+
 class MultiDeviceManager {
   colorValueToHex(color) {
     if (Array.isArray(color) && color.length >= 3) {
@@ -855,13 +865,22 @@ class MultiDeviceManager {
           
           // Find device name (skip ACK, UID-like responses, and firmware ready messages)
           for (const line of lines) {
+            if (line.startsWith('DEVICENAME:') || line.startsWith('DEVICE_NAME:')) {
+              const explicitName = line.split(':').slice(1).join(':').trim();
+              if (isLikelyValidDeviceName(explicitName)) {
+                resolve(explicitName);
+                return;
+              }
+              continue;
+            }
+
             if (line === 'END' || 
                 line.startsWith('ACK:') || 
                 line.startsWith('FIRMWARE_READY:') || 
                 /^[0-9A-F]{16}$/i.test(line)) {
               continue;
             }
-            if (line && line !== 'Unknown') {
+            if (isLikelyValidDeviceName(line)) {
               resolve(line);
               return;
             }

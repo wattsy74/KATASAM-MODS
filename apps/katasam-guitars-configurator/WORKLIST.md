@@ -282,7 +282,7 @@ Notes
 ### [ ] FEAT-003 User input hardware version detection
 
 Priority: Medium
-Status: Todo
+Status: In Progress
 
 Change request
 - When a device has just been flashed have the user press the middle fret button to ascertain the hardware version and apply the correct default config.
@@ -304,13 +304,14 @@ Test checklist
 
 Notes
 - 2026-06-20: Needs integration point after FEAT-002 flash/reconnect flow. Middle fret should be treated as the hardware-version signal source before default config selection.
+- 2026-06-20: Added shared hardware-defaults detection flow and wired it into post-flash reconnect/auto-connect path. It now prompts for middle-fret hardware confirmation, applies V1/V2 defaults to session, and exposes Apply To Config for persistence.
 
 ---
 
 ### [ ] FEAT-004 User input hardware version detection when defaults button pressed in config editor
 
 Priority: Medium
-Status: Todo
+Status: In Progress
 
 Change request
 - When a defaults button is pressed in Config Editor, have the user press the middle fret button to ascertain the hardware version and apply the correct default config.
@@ -331,6 +332,7 @@ Test checklist
 
 Notes
 - 2026-06-20: Related to FEAT-003, but scoped to Config Editor defaults rather than post-flash onboarding.
+- 2026-06-20: Added `Detect Hardware Defaults` action in Config Editor and wired it to the same shared V1/V2 detection flow used by FEAT-003.
 
 ---
 
