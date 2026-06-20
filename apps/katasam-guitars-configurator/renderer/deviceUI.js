@@ -2,6 +2,21 @@
 console.log('[deviceUI.js] Loaded. Assigning applyConfig and populatePresetDropdown to window.');
 // Handles UI updates for device config, presets, and user presets
 
+function colorValueToCss(color, fallback) {
+  if (Array.isArray(color) && color.length >= 3) {
+    const channels = color.slice(0, 3).map(value => Number(value));
+    if (channels.every(value => Number.isFinite(value))) {
+      return '#' + channels
+        .map(value => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0'))
+        .join('');
+    }
+  }
+  if (typeof color === 'string') {
+    if (color.startsWith('#') || color.startsWith('rgb')) return color;
+  }
+  return fallback;
+}
+
 function applyConfig(config) {
   // Update fret buttons (pressed/released)
   const fretColors = {
@@ -23,27 +38,34 @@ function applyConfig(config) {
       // Remove all child nodes (text, icons, etc.)
       while (activeBtn.firstChild) activeBtn.removeChild(activeBtn.firstChild);
       activeBtn.textContent = '';
-      activeBtn.style.backgroundColor = ledColors[idx] !== undefined ? ledColors[idx] : '#FFFFFF';
+      activeBtn.style.backgroundColor = colorValueToCss(ledColors[idx], '#FFFFFF');
     }
     const releasedBtn = document.getElementById(`strum-${strum}-released`);
     if (releasedBtn) {
       while (releasedBtn.firstChild) releasedBtn.removeChild(releasedBtn.firstChild);
       releasedBtn.textContent = '';
-      releasedBtn.style.backgroundColor = releasedColors[idx] !== undefined ? releasedColors[idx] : '#454545';
+      releasedBtn.style.backgroundColor = colorValueToCss(releasedColors[idx], '#454545');
     }
   });
   // Fret buttons
-  const fretOrder = ['orange', 'blue', 'yellow', 'red', 'green'];
-  fretOrder.forEach((fret, i) => {
+  const fretLedIndexByName = {
+    orange: 2,
+    blue: 3,
+    yellow: 4,
+    red: 5,
+    green: 6
+  };
+  ['green', 'red', 'yellow', 'blue', 'orange'].forEach((fret) => {
+    const ledIndex = fretLedIndexByName[fret];
     const pressedBtn = document.getElementById(`${fret}-fret-pressed`);
     if (pressedBtn) {
       pressedBtn.textContent = '';
-      pressedBtn.style.backgroundColor = ledColors[i+2] !== undefined ? ledColors[i+2] : '#FFFFFF';
+      pressedBtn.style.backgroundColor = colorValueToCss(ledColors[ledIndex], '#FFFFFF');
     }
     const releasedBtn = document.getElementById(`${fret}-fret-released`);
     if (releasedBtn) {
       releasedBtn.textContent = '';
-      releasedBtn.style.backgroundColor = releasedColors[i+2] !== undefined ? releasedColors[i+2] : '#454545';
+      releasedBtn.style.backgroundColor = colorValueToCss(releasedColors[ledIndex], '#454545');
     }
   });
   // Remove any text from strum buttons after config assignment

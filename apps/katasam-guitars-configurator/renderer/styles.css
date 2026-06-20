@@ -288,8 +288,34 @@ html, body {
   color: #28D0AF;
   font-weight: 700;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
   align-items: flex-start;
   padding-top: 6px;
+}
+
+.config-editor-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.config-editor-row-action {
+  min-height: 30px;
+  border-radius: 6px;
+  border: 1px solid #28D0AF;
+  background: #19352f;
+  color: #f2f2f2;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.config-editor-row-action:hover,
+.config-editor-row-action:focus {
+  outline: none;
+  background: #21483f;
 }
 
 .config-editor-row-fields {
@@ -777,7 +803,7 @@ select option:disabled {
   font-family: 'Segoe UI', sans-serif;
   font-weight: bold;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
   display: none; /* Hidden by default */
   min-width: 200px;
   text-align: center;
@@ -785,8 +811,15 @@ select option:disabled {
   height: 38px;
 }
 
-#apply-config-btn:hover {
-  background-color: #e6b800;
+#apply-config-btn:hover,
+#apply-config-btn:focus {
+  background-color: #5DE3CB;
+  color: #222;
+  box-shadow: 0 0 0 2px rgba(93, 227, 203, 0.35);
+}
+
+#apply-config-btn:focus {
+  outline: none;
 }
 .config-menu-wrapper {
   position: relative; /* Keeps the icon aligned inside header */
