@@ -295,7 +295,7 @@ Definition of done
 - The selected/detected hardware version is logged clearly for debugging.
 
 Test checklist
-- [ ] Flash a device and confirm the hardware version detection prompt appears after reconnect.
+- [x] Flash a device and confirm the hardware version detection prompt appears after reconnect.
 - [ ] Press the middle fret button on V1 hardware and confirm V1 defaults are selected.
 - [ ] Press the middle fret button on V2 hardware and confirm V2 defaults are selected.
 - [ ] Confirm timeout/failure path offers manual choice or cancellation.
@@ -305,13 +305,14 @@ Test checklist
 Notes
 - 2026-06-20: Needs integration point after FEAT-002 flash/reconnect flow. Middle fret should be treated as the hardware-version signal source before default config selection.
 - 2026-06-20: Added shared hardware-defaults detection flow and wired it into post-flash reconnect/auto-connect path. It now prompts for middle-fret hardware confirmation, applies V1/V2 defaults to session, and exposes Apply To Config for persistence.
+- 2026-06-20: Timing of the prompt was 90sec plus, shortened but now in between the initial setup and the determination was wrong at that point said v1 hardware when it should be v2
 
 ---
 
-### [ ] FEAT-004 User input hardware version detection when defaults button pressed in config editor
+### [x] FEAT-004 User input hardware version detection when defaults button pressed in config editor
 
 Priority: Medium
-Status: In Progress
+Status: Done
 
 Change request
 - When a defaults button is pressed in Config Editor, have the user press the middle fret button to ascertain the hardware version and apply the correct default config.
@@ -323,12 +324,11 @@ Definition of done
 - Detection flow does not write to device until the user applies the resulting config through the normal apply path.
 
 Test checklist
-- [ ] Press the defaults action in Config Editor and confirm the hardware detection prompt appears.
-- [ ] Press the middle fret button on V1 hardware and confirm V1 defaults load into the editor.
-- [ ] Press the middle fret button on V2 hardware and confirm V2 defaults load into the editor.
-- [ ] Confirm cancelling detection does not change the current editor values.
-- [ ] Confirm Apply to Session/Config is still required before device config is changed.
-- [ ] Confirm existing Load V1 Defaults and Load V2 Defaults fallback behavior still works.
+- [x] Press the defaults action in Config Editor and confirm the hardware detection prompt appears.
+- [x] Press the middle fret button on V1 hardware and confirm V1 defaults load into the editor.
+- [x] Press the middle fret button on V2 hardware and confirm V2 defaults load into the editor.
+- [x] Confirm cancelling detection does not change the current editor values.
+- [x] Confirm Apply to Session/Config is still required before device config is changed.
 
 Notes
 - 2026-06-20: Related to FEAT-003, but scoped to Config Editor defaults rather than post-flash onboarding.
