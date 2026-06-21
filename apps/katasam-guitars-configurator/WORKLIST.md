@@ -170,7 +170,7 @@ Notes
 
 ---
 
-### [ ] BUG-007 Apply to config button hover is Yellow
+### [x] BUG-007 Apply to config button hover is Yellow
 
 Priority: Medium
 Status: In Progress
@@ -183,7 +183,7 @@ Definition of done
 - Button text remains readable in normal, hover, focus, and disabled states.
 
 Test checklist
-- [ ] Hover Apply To Config and visually confirm the hover colour matches the app style.
+- [x] Hover Apply To Config and visually confirm the hover colour matches the app style.
 - [x] Keyboard-focus Apply To Config and confirm the focus state uses readable teal styling.
 - [x] Confirm the hidden/visible behavior of Apply To Config is unchanged.
 
