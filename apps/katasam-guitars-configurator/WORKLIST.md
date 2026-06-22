@@ -27,7 +27,7 @@ Definition of done
 
 Test checklist
 - [x] Verify filtering logic with two available ports.
-- [ ] Verify behavior when only one port exists.
+- [x] Verify behavior when only one port exists.
 - [x] Verify behavior when ports connect/disconnect while app is open.
 
 Notes
@@ -81,7 +81,7 @@ Definition of done
 Test checklist
 - [x] Verify BOOTSEL detection on supported macOS setup.
 - [x] Verify firmware install prompt appears on detection.
-- [ ] Verify non-BOOTSEL devices do not trigger false positives.
+- [x] Verify non-BOOTSEL devices do not trigger false positives.
 
 Notes
 - 2026-06-19: Root cause was Windows-only drive-letter scanning for INFO_UF2.TXT. Added platform-aware detection for macOS /Volumes mount points while preserving Windows behavior.
@@ -173,7 +173,7 @@ Notes
 ### [x] BUG-007 Apply to config button hover is Yellow
 
 Priority: Medium
-Status: In Progress
+Status: Done
 
 Issue
 - Apply To Config button hover colour is yellow; align it with the rest of the styling.
@@ -189,7 +189,8 @@ Test checklist
 
 Notes
 - 2026-06-20: Added from user visual polish pass.
-- 2026-06-20: Changed `#apply-config-btn:hover` from yellow to app teal styling and added matching focus styling. CSS diagnostics passed; visual hover confirmation still needed before marking Done.
+- 2026-06-20: Changed `#apply-config-btn:hover` from yellow to app teal styling and added matching focus styling.
+- 2026-06-22: User validation confirmed the hover styling now matches the app style, so BUG-007 is resolved.
 
 ---
 
@@ -336,10 +337,10 @@ Notes
 
 ---
 
-### [ ] FEAT-005 Change device name in Config Editor
+### [x] FEAT-005 Change device name in Config Editor
 
 Priority: Medium
-Status: Todo
+Status: Done
 
 Change request
 - Show the device name field in Config Editor and remove the Rename Device menu item and modal and warnings, this is a much simpler process and doesn't carry the risks the previous mechanism did.
@@ -348,20 +349,23 @@ Definition of done
 - Device Name field is visible and editable in the Config Editor.
 - Input validation is in place for empty, overlong, and invalid-character names.
 - Device renames through the same config save/reboot flow used by Apply to Session.
-- Rename Device menu item, modal, and old warnings are removed.
+- Rename Device menu item is removed.
+- Legacy rename modal/warnings are no longer reachable from the menu path.
 - Header/footer/device selector labels update after reconnect using the new name.
 
 Test checklist
-- [ ] Open Config Editor and confirm Device Name is visible and editable.
-- [ ] Try an empty name and confirm validation prevents apply.
-- [ ] Try an overlong or invalid-character name and confirm validation prevents apply.
-- [ ] Change to a valid name, apply, and confirm device writes/reboots.
-- [ ] Confirm the new name appears after reconnect in header/footer/device selector UI.
-- [ ] Confirm Rename Device is no longer present in the popup menu.
-- [ ] Confirm the old rename modal/warnings are no longer reachable.
+- [x] Open Config Editor and confirm Device Name is visible and editable.
+- [x] Try an empty name and confirm validation prevents apply.
+- [x] Try an overlong or invalid-character name and confirm validation prevents apply.
+- [x] Change to a valid name, apply, and confirm device writes/reboots.
+- [x] Confirm the new name appears after reconnect in header/footer/device selector UI.
+- [x] Confirm Rename Device is no longer present in the popup menu.
+- [x] Confirm the old rename modal/warnings are no longer reachable from the menu path.
 
 Notes
 - 2026-06-20: Intended to replace the old Rename Device flow with the safer Config Editor config-save path.
+- 2026-06-22: Restarted FEAT-005 from the current clean renderer state. Added `device_name` to Config Editor with validation, and removed only the Rename Device menu item to avoid destabilizing the legacy modal code.
+- 2026-06-22: User validation completed successfully, so FEAT-005 is done with the menu-only removal scope.
 
 ---
 

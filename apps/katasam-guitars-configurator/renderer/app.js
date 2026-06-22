@@ -995,6 +995,20 @@ function parseEditorValue(rawValue) {
 
   return JSON.parse(trimmed);
 }
+
+function validateDeviceNameValue(rawValue) {
+  const value = String(rawValue ?? '').trim();
+  if (!value) {
+    return 'cannot be empty';
+  }
+  if (value.length > 32) {
+    return 'must be 32 characters or fewer';
+  }
+  if (!/^[A-Za-z0-9\s-]+$/.test(value)) {
+    return 'can only contain letters, numbers, spaces, and dashes';
+  }
+  return null;
+}
 // Fret index mapping for config <-> UI
 // Config order after strum is: orange(2), blue(3), yellow(4), red(5), green(6)
 // DOM order is: green, red, yellow, blue, orange
@@ -5062,6 +5076,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
       ? configObj[fieldDef.key]
       : getConfigColorValue(configObj, fieldDef.sourceKey, fieldDef.colorSet);
     const inputEl = createEditorInput(fieldDef, value);
+    inputEl.dataset.fieldLabel = fieldDef.label;
 
     const inputWrap = document.createElement('div');
     inputWrap.className = 'config-editor-input-wrap';
@@ -5117,6 +5132,12 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     const hatMode = String(configObj.hat_mode || '').toLowerCase() === 'joystick' ? 'joystick' : 'dpad';
 
     const groups = [
+      {
+        title: 'Device',
+        fields: [
+          { type: 'key', key: 'device_name', label: getConfigEditorLabel('device_name') }
+        ]
+      },
       {
         title: 'Green Fret',
         fields: [
@@ -5336,10 +5357,16 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
         if (fieldType === 'color') {
           setConfigColorValue(nextConfig, inputEl.dataset.sourceKey, inputEl.dataset.colorSet, parsedValue);
         } else {
+          if (inputEl.dataset.key === 'device_name') {
+            const deviceNameError = validateDeviceNameValue(parsedValue);
+            if (deviceNameError) {
+              throw new Error(deviceNameError);
+            }
+          }
           nextConfig[inputEl.dataset.key] = parsedValue;
         }
       } catch (err) {
-        const keyName = inputEl.dataset.key || `${inputEl.dataset.sourceKey} ${inputEl.dataset.colorSet}`;
+        const keyName = inputEl.dataset.fieldLabel || inputEl.dataset.key || `${inputEl.dataset.sourceKey} ${inputEl.dataset.colorSet}`;
         errors.push(`${keyName}: ${err.message}`);
       }
     });
@@ -5390,7 +5417,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     const { nextConfig, errors } = readConfigFromEditor();
 
     if (errors.length > 0) {
-      await customAlert(`Failed to parse one or more fields:\n\n${errors.join('\n')}`);
+      await customAlert(errors.join('\n'));
       return;
     }
 
