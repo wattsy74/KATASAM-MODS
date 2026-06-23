@@ -13,7 +13,7 @@ window.manuallyRefreshDeviceName = async function() {
   showToast('Refreshing device name...', 'info');
   
   requestDeviceNameDirect((deviceName) => {
-    if (deviceName && deviceName.trim()) {
+    if (isLikelyValidDeviceName(deviceName)) {
       console.log('[manuallyRefreshDeviceName] Got device name:', deviceName);
       activeDevice.displayName = deviceName.trim();
       activeDevice.nameNeedsRefresh = false;
@@ -31,7 +31,7 @@ window.manuallyRefreshDeviceName = async function() {
       
       showToastSuccess('Device name refreshed: ' + deviceName);
     } else {
-      console.warn('[manuallyRefreshDeviceName] Failed to get device name');
+      console.warn('[manuallyRefreshDeviceName] Failed to get valid device name');
       showToastError('Failed to get device name');
     }
   });
@@ -113,7 +113,26 @@ window.manuallyLoadDeviceFiles = async function() {
 // These functions use the efficient READUID, READVERSION, READDEVICENAME commands
 // instead of reading entire files, eliminating the "cycling through files" behavior
 
+function isLikelyValidDeviceName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 50) return false;
+  if (trimmed.includes('\\n') || trimmed.includes('\\r') || trimmed.includes(':')) return false;
+  if (trimmed.includes('.json') || trimmed.includes('.py')) return false;
+  if (/^(ACK|ERROR|END|READDEVICENAME|READUID|READVERSION|DETECTPIN|PINDETECT|FIRMWARE_READY)/i.test(trimmed)) return false;
+  return true;
+}
+
+function isHardwareDetectionActive() {
+  return !!window._hardwareDetectInProgress;
+}
+
 function requestDeviceFirmwareVersionDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceFirmwareVersionDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.log('❌ No connected port for direct firmware version request');
     return callback(null);
@@ -184,6 +203,11 @@ function requestDeviceFirmwareVersionDirect(callback) {
 }
 
 function requestDeviceUidDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceUidDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.warn('[requestDeviceUidDirect] No device connected.');
     callback(null);
@@ -256,6 +280,11 @@ function requestDeviceUidDirect(callback) {
 }
 
 function requestDeviceNameDirect(callback) {
+  if (isHardwareDetectionActive()) {
+    console.warn('[requestDeviceNameDirect] Skipping during hardware detection');
+    return callback(null);
+  }
+
   if (!connectedPort) {
     console.warn('[requestDeviceNameDirect] No connected port');
     return callback(null);
@@ -293,6 +322,18 @@ function requestDeviceNameDirect(callback) {
       const lines = buffer.split(/[\r\n]+/);
       for (const line of lines) {
         const trimmed = line.trim();
+
+        // Prefer explicit name prefixes if firmware returns them.
+        if (trimmed.startsWith('DEVICENAME:') || trimmed.startsWith('DEVICE_NAME:')) {
+          const explicitName = trimmed.split(':').slice(1).join(':').trim();
+          if (isLikelyValidDeviceName(explicitName)) {
+            console.log('[requestDeviceNameDirect] Found explicit device name:', explicitName);
+            callback(explicitName);
+            return;
+          }
+          continue;
+        }
+
         // Skip empty lines, END marker, error messages, ACK responses, and UID-like strings
         if (!trimmed || 
             trimmed === 'END' ||
@@ -301,22 +342,17 @@ function requestDeviceNameDirect(callback) {
             /^[0-9A-Fa-f]{16}$/.test(trimmed)) { // Skip UID format strings
           continue;
         }
-        
-        // Additional validation: device names should be reasonable
-        if (trimmed.length > 50 || trimmed.includes('.json') || trimmed.includes('.py')) {
-          console.warn('[requestDeviceNameDirect] Skipping invalid device name format:', trimmed);
-          continue;
+
+        if (isLikelyValidDeviceName(trimmed)) {
+          console.log('[requestDeviceNameDirect] Found device name:', trimmed);
+          callback(trimmed);
+          return;
         }
-        
-        // This should be the device name
-        console.log('[requestDeviceNameDirect] Found device name:', trimmed);
-        callback(trimmed);
-        return;
       }
       
       // If we get here, no valid device name was found
       console.warn('[requestDeviceNameDirect] No valid device name found in response, buffer was:', JSON.stringify(buffer));
-      callback('Unknown Device');
+      callback(null);
     }
   };
   
@@ -422,15 +458,14 @@ window.updateActiveButtonText = function(device) {
       name = activeDevice.displayName || (activeDevice.portInfo && (activeDevice.portInfo.friendlyName || activeDevice.portInfo.path)) || 'Unknown Device';
     }
     
-    // Check if device files are loaded (config, presets, or userPresets exist)
-    const filesLoaded = activeDevice.config || activeDevice.presets || activeDevice.userPresets;
-    if (filesLoaded) {
+    // Mark as ready only when we have valid color config loaded.
+    const hasConfigColors = hasValidConfigColors(activeDevice.config);
+    if (hasConfigColors) {
       selectorBtn.textContent = `Connected: ${name} : Ready`;
       selectorBtn.style.background = '#2ecc40';
       selectorBtn.style.color = '#222';
     } else {
-      // Show connected but indicate files need manual loading
-      selectorBtn.textContent = `Connected: ${name}`;
+      selectorBtn.textContent = `Connected: ${name} : Loading config...`;
       selectorBtn.style.background = '#3498db';
       selectorBtn.style.color = '#fff';
     }
@@ -461,9 +496,523 @@ window.getFlashingFirmware = function() {
   return isFlashingFirmware;
 };
 let originalConfig = null;
+
+// Temporary default sets for the Config JSON editor.
+// V2 values are from the provided Pi Zero config sample.
+const CONFIG_EDITOR_DEFAULT_V1 = {
+  "device_name": "TEST CONFIG NAME",
+  "_metadata": {
+    "version": "3.9.26",
+    "description": "KATASAM Guitar Controller Configuration",
+    "lastUpdated": "2025-08-13"
+  },
+  "UP": "GP2",
+  "DOWN": "GP3",
+  "LEFT": "GP4",
+  "RIGHT": "GP5",
+  "GREEN_FRET": "GP10",
+  "GREEN_FRET_led": 6,
+  "RED_FRET": "GP11",
+  "RED_FRET_led": 5,
+  "YELLOW_FRET": "GP12",
+  "YELLOW_FRET_led": 4,
+  "BLUE_FRET": "GP13",
+  "BLUE_FRET_led": 3,
+  "ORANGE_FRET": "GP14",
+  "ORANGE_FRET_led": 2,
+  "STRUM_UP": "GP7",
+  "STRUM_UP_led": 0,
+  "STRUM_DOWN": "GP8",
+  "STRUM_DOWN_led": 1,
+  "TILT": "GP9",
+  "SELECT": "GP0",
+  "START": "GP1",
+  "GUIDE": "GP6",
+  "WHAMMY": "GP27",
+  "neopixel_pin": "GP23",
+  "joystick_x_pin": "GP28",
+  "joystick_y_pin": "GP29",
+  "hat_mode": "dpad",
+  "led_brightness": 1.0,
+  "whammy_min": 500,
+  "whammy_max": 65000,
+  "whammy_reverse": false,
+  "tilt_wave_enabled": true,
+  "led_color": [
+    "#FFFFFF",
+    "#FFFFFF",
+    "#B33E00",
+    "#0000FF",
+    "#FFFF00",
+    "#FF0000",
+    "#00FF00"
+  ],
+  "released_color": [
+    "#454545",
+    "#454545",
+    "#521C00",
+    "#000091",
+    "#696B00",
+    "#8C0009",
+    "#003D00"
+  ]
+};
+
+const CONFIG_EDITOR_DEFAULT_V2 = {
+  "released_color": [
+    "#454545",
+    "#454545",
+    "#521C00",
+    "#000091",
+    "#696B00",
+    "#8C0009",
+    "#003D00"
+  ],
+  "tilt_wave_enabled": true,
+  "joystick_y_pin": "GP27",
+  "STRUM_UP": "GP15",
+  "YELLOW_FRET_led": 4,
+  "BLUE_FRET_led": 3,
+  "START": "GP0",
+  "TILT": "GP12",
+  "whammy_max": 65000,
+  "LEFT": "GP9",
+  "GUIDE": "GP7",
+  "ORANGE_FRET_led": 2,
+  "STRUM_DOWN_led": 1,
+  "UP": "GP11",
+  "WHAMMY": "GP29",
+  "ORANGE_FRET": "GP6",
+  "STRUM_UP_led": 0,
+  "DOWN": "GP10",
+  "BLUE_FRET": "GP5",
+  "RED_FRET_led": 5,
+  "neopixel_pin": "GP13",
+  "hat_mode": "dpad",
+  "RIGHT": "GP8",
+  "RED_FRET": "GP3",
+  "whammy_min": 500,
+  "GREEN_FRET": "GP2",
+  "STRUM_DOWN": "GP14",
+  "joystick_x_pin": "GP26",
+  "YELLOW_FRET": "GP4",
+  "device_name": "Guitar Controller",
+  "_metadata": {
+    "description": "BumbleGum Guitar Controller Configuration",
+    "lastUpdated": "2025-08-13",
+    "version": "3.9.26"
+  },
+  "led_color": [
+    "#0000FF",
+    "#0000FF",
+    "#FF4D00",
+    "#0000FF",
+    "#FFFF00",
+    "#FF0000",
+    "#008000"
+  ],
+  "led_brightness": 1,
+  "SELECT": "GP1",
+  "GREEN_FRET_led": 6,
+  "whammy_reverse": false
+};
+
+function getHardwareDefaultsConfig(hardwareVersion) {
+  return cloneJsonObject(hardwareVersion === 'v2' ? CONFIG_EDITOR_DEFAULT_V2 : CONFIG_EDITOR_DEFAULT_V1);
+}
+
+const HARDWARE_DETECT_BUILD = 'hdetect-20260620-4';
+
+function normalizePinName(pin) {
+  const raw = String(pin || '').trim().toUpperCase();
+  const gpMatch = raw.match(/^GP0*([0-9]+)$/);
+  if (gpMatch) {
+    return `GP${Number(gpMatch[1])}`;
+  }
+  return raw;
+}
+
+function appendHardwareDetectTrace(message) {
+  if (!window.__hardwareDetectTrace) {
+    window.__hardwareDetectTrace = [];
+  }
+  const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+  window.__hardwareDetectTrace.push(line);
+  if (window.__hardwareDetectTrace.length > 40) {
+    window.__hardwareDetectTrace.shift();
+  }
+  console.log(`[hardware-detect][trace] ${message}`);
+}
+
+function getHardwareDetectTraceText(maxLines = 10) {
+  const lines = Array.isArray(window.__hardwareDetectTrace) ? window.__hardwareDetectTrace : [];
+  if (!lines.length) return 'No detection trace available.';
+  const priorityLines = lines.filter(line =>
+    !line.includes('State check:') ||
+    line.includes('Build:') ||
+    line.includes('using direct diagnostics loop') ||
+    line.includes('Direct diagnostics polling started') ||
+    line.includes('DIAG force TX:') ||
+    line.includes('DIAG RX ') ||
+    line.includes('Diagnostics pollers not initialized') ||
+    line.includes('Diagnostics pin/hat polling started') ||
+    line.includes('Detection started') ||
+    line.includes('Port selected:') ||
+    line.includes('timeout after') ||
+    line.includes('finished with') ||
+    line.includes('Detection failed')
+  );
+  const tailLines = lines.slice(-Math.max(0, maxLines - Math.min(priorityLines.length, Math.ceil(maxLines / 2))));
+  const merged = [...priorityLines, ...tailLines].slice(-maxLines);
+  return merged.join('\n');
+}
+
+function showHardwareDetectStatusModal(message, title = 'Hardware Detection') {
+  const modal = document.getElementById('custom-confirm-modal');
+  const titleEl = modal?.querySelector('h3');
+  const messageEl = document.getElementById('custom-confirm-message');
+  const yesBtn = document.getElementById('custom-confirm-yes');
+  const noBtn = document.getElementById('custom-confirm-no');
+
+  if (!modal || !messageEl || !yesBtn || !noBtn) {
+    return () => {};
+  }
+
+  const prevTitle = titleEl ? titleEl.textContent : '';
+  const prevMessage = messageEl.textContent;
+  const prevYesLabel = yesBtn.textContent;
+  const prevNoLabel = noBtn.textContent;
+  const prevYesDisplay = yesBtn.style.display;
+  const prevNoDisplay = noBtn.style.display;
+
+  if (titleEl) titleEl.textContent = title;
+  messageEl.textContent = message;
+  yesBtn.style.display = 'none';
+  noBtn.style.display = 'none';
+  modal.style.display = 'flex';
+
+  return () => {
+    modal.style.display = 'none';
+    if (titleEl) titleEl.textContent = prevTitle;
+    messageEl.textContent = prevMessage;
+    yesBtn.textContent = prevYesLabel;
+    noBtn.textContent = prevNoLabel;
+    yesBtn.style.display = prevYesDisplay;
+    noBtn.style.display = prevNoDisplay;
+  };
+}
+
+function parsePinReadResponse(str, validKeys) {
+  const pinMatch = str.match(/PIN:([A-Z_]+):(\d+)/);
+  if (!pinMatch) return null;
+  const key = pinMatch[1];
+  const val = pinMatch[2];
+  if (Array.isArray(validKeys) && !validKeys.includes(key)) return null;
+  return { key, val };
+}
+
+function inferCurrentConfigVersion() {
+  const config = originalConfig || window.originalConfig || window.multiDeviceManager?.getActiveDevice?.()?.config;
+  const yellowPin = normalizePinName(config?.YELLOW_FRET);
+  if (yellowPin === normalizePinName(CONFIG_EDITOR_DEFAULT_V1.YELLOW_FRET)) return 'v1';
+  if (yellowPin === normalizePinName(CONFIG_EDITOR_DEFAULT_V2.YELLOW_FRET)) return 'v2';
+  return null;
+}
+
+function runMiddleFretDetectAttempt(port, attemptIndex, attemptTimeoutMs = 2600) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let lastStateSnapshot = '';
+    let stateSampleCounter = 0;
+    const previousConnectedPort = connectedPort;
+    const detectKeys = ['YELLOW_FRET', 'TILT', 'LEFT'];
+    let pollKeyIndex = 0;
+    let localPollIntervalId = null;
+
+    appendHardwareDetectTrace(`Attempt ${attemptIndex}: using direct diagnostics loop on ${port?.path || 'unknown-path'}`);
+
+    if (connectedPort !== port) {
+      connectedPort = port;
+      appendHardwareDetectTrace(`connectedPort rebound to active port: ${port.path || 'unknown-path'}`);
+    }
+
+    appendHardwareDetectTrace(`Attempt ${attemptIndex}: starting direct diagnostics polling`);
+
+    const localDiagHandler = (data) => {
+      try {
+        const str = data.toString().trim();
+        const parsed = parsePinReadResponse(str, detectKeys);
+        if (!parsed) return;
+
+        if (parsed.key === 'LEFT') {
+          window.__diagHatStatusMap = {
+            ...(window.__diagHatStatusMap || {}),
+            LEFT: parsed.val
+          };
+          appendHardwareDetectTrace(`DIAG RX hat: ${parsed.key}=${parsed.val}`);
+          return;
+        }
+
+        window.__diagPinStatusMap = {
+          ...(window.__diagPinStatusMap || {}),
+          [parsed.key]: parsed.val
+        };
+        appendHardwareDetectTrace(`DIAG RX pin: ${parsed.key}=${parsed.val}`);
+      } catch (err) {
+        appendHardwareDetectTrace(`DIAG local handler error: ${err.message || 'unknown error'}`);
+      }
+    };
+
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      if (localPollIntervalId) {
+        clearInterval(localPollIntervalId);
+        localPollIntervalId = null;
+      }
+      port.off('data', localDiagHandler);
+      clearInterval(stateCheckIntervalId);
+      clearTimeout(timeoutId);
+      connectedPort = previousConnectedPort;
+      appendHardwareDetectTrace('connectedPort restored after detection attempt');
+      appendHardwareDetectTrace(`Attempt ${attemptIndex}: finished with '${result || 'none'}'`);
+      resolve(result);
+    };
+
+    const tryResolve = () => {
+      const pinStates = window.__diagPinStatusMap || {};
+      const hatStates = window.__diagHatStatusMap || {};
+
+      if (hatStates.LEFT === '1') {
+        appendHardwareDetectTrace('Physical middle fret mapped to LEFT -> hardware V2');
+        finish('v2');
+        return true;
+      }
+      if (pinStates.TILT === '1') {
+        appendHardwareDetectTrace('Physical middle fret mapped to TILT -> hardware V1');
+        finish('v1');
+        return true;
+      }
+      if (pinStates.YELLOW_FRET === '1') {
+        const configVersion = inferCurrentConfigVersion();
+        appendHardwareDetectTrace(`Physical middle fret mapped to YELLOW_FRET with current config '${configVersion || 'unknown'}'`);
+        if (configVersion === 'v1' || configVersion === 'v2') {
+          finish(configVersion);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    window.__diagPinStatusMap = {};
+    window.__diagHatStatusMap = {};
+    port.off('data', localDiagHandler);
+    port.on('data', localDiagHandler);
+
+    localPollIntervalId = setInterval(() => {
+      if (!port || port.isOpen === false) {
+        appendHardwareDetectTrace(`Direct diagnostics poll skipped: port open=${port?.isOpen === false ? 'no' : 'unknown'}`);
+        return;
+      }
+
+      const key = detectKeys[pollKeyIndex];
+      pollKeyIndex = (pollKeyIndex + 1) % detectKeys.length;
+
+      try {
+        port.write(`READPIN:${key}\n`);
+        appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
+      } catch (err) {
+        appendHardwareDetectTrace(`DIAG force write error (${key}): ${err.message || 'unknown error'}`);
+      }
+    }, 30);
+
+    appendHardwareDetectTrace('Direct diagnostics polling started');
+
+    const stateCheckIntervalId = setInterval(() => {
+      const pinStates = window.__diagPinStatusMap || {};
+      const hatStates = window.__diagHatStatusMap || {};
+      const snapshot = `YELLOW=${pinStates.YELLOW_FRET || '-'} LEFT=${hatStates.LEFT || '-'} TILT=${pinStates.TILT || '-'}`;
+      stateSampleCounter += 1;
+      if (snapshot !== lastStateSnapshot || stateSampleCounter % 8 === 0) {
+        appendHardwareDetectTrace(`State check: ${snapshot}`);
+        lastStateSnapshot = snapshot;
+      }
+      tryResolve();
+    }, 80);
+
+    const timeoutId = setTimeout(() => {
+      clearInterval(stateCheckIntervalId);
+      appendHardwareDetectTrace(`Attempt ${attemptIndex}: timeout after ${attemptTimeoutMs}ms`);
+      finish(null);
+    }, attemptTimeoutMs);
+  });
+}
+
+async function detectHardwareVersionFromMiddleFretSignal(timeoutMs = 9000) {
+  const activePort = connectedPort || window.multiDeviceManager?.getActiveDevice?.()?.port;
+  if (!activePort) return null;
+
+  window.__hardwareDetectTrace = [];
+  appendHardwareDetectTrace(`Build: ${HARDWARE_DETECT_BUILD}`);
+  appendHardwareDetectTrace(`Detection started (timeout=${timeoutMs}ms)`);
+  appendHardwareDetectTrace(`Port selected: ${activePort.path || 'unknown-path'}`);
+
+  if (detectHardwareVersionFromMiddleFretSignal.inProgress) {
+    console.warn('[hardware-detect] Detection already in progress');
+    appendHardwareDetectTrace('Skipped: detection already in progress');
+    return null;
+  }
+
+  detectHardwareVersionFromMiddleFretSignal.inProgress = true;
+  window._hardwareDetectInProgress = true;
+  const manager = window.multiDeviceManager;
+  const shouldResumeScanning = !!manager?.pauseScanning;
+  if (shouldResumeScanning) {
+    manager.pauseScanning();
+    appendHardwareDetectTrace('Scanning paused');
+  }
+
+  const runDetection = async () => {
+    const attemptWindowMs = Math.max(2600, timeoutMs);
+
+    try {
+      if (window.multiDeviceManager?.flushSerialBuffer) {
+        await window.multiDeviceManager.flushSerialBuffer(activePort);
+        appendHardwareDetectTrace('Serial buffer flushed before detection');
+      }
+    } catch (flushErr) {
+      console.warn('[hardware-detect] Buffer flush failed:', flushErr);
+      appendHardwareDetectTrace(`Buffer flush failed: ${flushErr.message || 'unknown error'}`);
+    }
+
+    appendHardwareDetectTrace(`Current config version inferred as '${inferCurrentConfigVersion() || 'unknown'}'`);
+    const result = await runMiddleFretDetectAttempt(activePort, 1, attemptWindowMs);
+    if (result === 'v1' || result === 'v2') {
+      appendHardwareDetectTrace(`Detection resolved as ${result.toUpperCase()}`);
+      return result;
+    }
+
+    appendHardwareDetectTrace('Detection failed for this try');
+    return null;
+  };
+
+  try {
+    if (window.multiDeviceManager?.pauseScanningDuringOperation) {
+      return await window.multiDeviceManager.pauseScanningDuringOperation(runDetection);
+    }
+    return await runDetection();
+  } finally {
+    if (shouldResumeScanning && manager?.resumeScanning) {
+      manager.resumeScanning();
+      appendHardwareDetectTrace('Scanning resumed');
+    }
+    detectHardwareVersionFromMiddleFretSignal.inProgress = false;
+    window._hardwareDetectInProgress = false;
+  }
+}
+
+async function detectHardwareVersionFromMiddleFretPrompt(contextLabel = 'defaults') {
+  await customAlert(
+    'Click OK, then press and hold the Middle Fret button so we can detect and apply the correct config.',
+    { title: 'Hardware Detection' }
+  );
+  while (true) {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const closeDetectingStatus = showHardwareDetectStatusModal(
+      'Hardware Detection\n\nDetecting now...\n\nKeep holding the Middle Fret button until this step completes.'
+    );
+    const autoDetectedVersion = await detectHardwareVersionFromMiddleFretSignal();
+    closeDetectingStatus();
+
+    if (autoDetectedVersion === 'v1' || autoDetectedVersion === 'v2') {
+      return autoDetectedVersion;
+    }
+
+    const retryDetection = await customConfirmWithLabels(
+      'No Middle Fret input was detected.\n\nPlease press and hold the Middle Fret button, then choose Retry Detection.',
+      {
+        title: 'Hardware Detection',
+        yesLabel: 'Retry Detection',
+        noLabel: 'Cancel'
+      }
+    );
+
+    if (!retryDetection) {
+      return null;
+    }
+  }
+}
+
+async function applyDetectedHardwareDefaultsToSession(contextLabel = 'defaults') {
+  const detectedVersion = await detectHardwareVersionFromMiddleFretPrompt(contextLabel);
+  if (detectedVersion !== 'v1' && detectedVersion !== 'v2') {
+    return null;
+  }
+  const defaultsConfig = getHardwareDefaultsConfig(detectedVersion);
+
+  originalConfig = cloneJsonObject(defaultsConfig);
+  window.originalConfig = cloneJsonObject(defaultsConfig);
+
+  if (typeof applyConfig === 'function') {
+    applyConfig(originalConfig);
+  }
+
+  configDirty = true;
+  const applyBtn = document.getElementById('apply-config-btn');
+  if (applyBtn) applyBtn.style.display = 'inline-block';
+
+  await customAlert(
+    `Detected ${detectedVersion.toUpperCase()} hardware.\n\nLoaded ${detectedVersion.toUpperCase()} defaults into session.`
+  );
+  return { detectedVersion, defaultsConfig };
+}
+
+function cloneJsonObject(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function formatEditorValue(value) {
+  if (typeof value === 'string') return value;
+  return JSON.stringify(value);
+}
+
+function parseEditorValue(rawValue) {
+  const trimmed = rawValue.trim();
+  if (trimmed === '') return '';
+
+  const shouldParseJson =
+    (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+    (trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    trimmed === 'true' ||
+    trimmed === 'false' ||
+    trimmed === 'null' ||
+    /^-?\d+(\.\d+)?$/.test(trimmed);
+
+  if (!shouldParseJson) {
+    return rawValue;
+  }
+
+  return JSON.parse(trimmed);
+}
+
+function validateDeviceNameValue(rawValue) {
+  const value = String(rawValue ?? '').trim();
+  if (!value) {
+    return 'cannot be empty';
+  }
+  if (value.length > 32) {
+    return 'must be 32 characters or fewer';
+  }
+  if (!/^[A-Za-z0-9\s-]+$/.test(value)) {
+    return 'can only contain letters, numbers, spaces, and dashes';
+  }
+  return null;
+}
 // Fret index mapping for config <-> UI
-// 0: orange, 1: blue, 2: yellow, 3: red, 4: green
-const fretIndexMap = [2, 3, 4, 5, 6];
+// Config order after strum is: orange(2), blue(3), yellow(4), red(5), green(6)
+// DOM order is: green, red, yellow, blue, orange
+const fretIndexMap = [6, 5, 4, 3, 2];
 
 // Always sync with window.originalConfig if available
 Object.defineProperty(window, 'originalConfig', {
@@ -531,12 +1080,16 @@ function initializeDeviceSelector() {
       devices.forEach(device => {
         const isActive = window.multiDeviceManager.activeDevice && window.multiDeviceManager.activeDevice.id === device.id;
         const isConnected = device.isConnected;
+        const rawName = device.getDisplayName ? device.getDisplayName() : (device.displayName || device.id || 'Unknown Device');
+        const safeName = isLikelyValidDeviceName(rawName)
+          ? rawName
+          : ((device.portInfo && (device.portInfo.friendlyName || device.portInfo.path)) || device.id || 'Unknown Device');
         html += `<div style="display:flex; align-items:center; justify-content:space-between; background:${isActive ? '#333a' : 'none'}; border-radius:6px; margin-bottom:6px; padding:6px 8px;">`;
-        html += `<span style="display:flex; align-items:center;">`;
+        html += `<span style="display:flex; align-items:center; min-width:0; flex:1;">`;
         html += `<span style="width:14px; height:14px; border-radius:50%; background:${isConnected ? '#2ecc40' : '#e74c3c'}; display:inline-block; margin-right:8px;"></span>`;
-        html += `<span style="font-weight:bold; margin-right:8px;">${device.getDisplayName ? device.getDisplayName() : device.displayName || device.id}</span>`;
+        html += `<span style="font-weight:bold; margin-right:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:520px;">${safeName}</span>`;
         html += `</span>`;
-        html += `<span>`;
+        html += `<span style="flex-shrink:0;">`;
         // Identify button (always shown)
         html += `<button class="device-identify-btn" data-id="${device.id}" style="background:#f1c40f; color:#222; border:none; border-radius:4px; padding:4px 10px; margin-right:6px; cursor:pointer;">Identify</button>`;
         if (isConnected && isActive) {
@@ -758,9 +1311,10 @@ function cleanupSerialDataListeners(port, keepListeners = []) {
   serialListenerManager.removeAllListeners(port);
 }
 
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 // ===== MODULAR MULTI-DEVICE SUPPORT =====
 const MultiDeviceManager = require('./multiDeviceManager');
 const serialFileIO = require('./serialFileIO');
@@ -837,17 +1391,87 @@ function customConfirm(message) {
   });
 }
 
-function customAlert(message) {
+function customConfirmWithLabels(message, {
+  title = 'Confirm Action',
+  yesLabel = 'Yes',
+  noLabel = 'No'
+} = {}) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('custom-confirm-modal');
+    const titleEl = modal?.querySelector('h3');
+    const messageEl = document.getElementById('custom-confirm-message');
+    const yesBtn = document.getElementById('custom-confirm-yes');
+    const noBtn = document.getElementById('custom-confirm-no');
+    if (!modal || !messageEl || !yesBtn || !noBtn) {
+      resolve(false);
+      return;
+    }
+
+    const prevTitle = titleEl ? titleEl.textContent : null;
+    const prevYes = yesBtn.textContent;
+    const prevNo = noBtn.textContent;
+
+    if (titleEl) titleEl.textContent = title;
+    messageEl.textContent = message;
+    yesBtn.textContent = yesLabel;
+    noBtn.textContent = noLabel;
+    modal.style.display = 'flex';
+
+    function cleanup() {
+      modal.style.display = 'none';
+      if (titleEl && prevTitle !== null) titleEl.textContent = prevTitle;
+      yesBtn.textContent = prevYes;
+      noBtn.textContent = prevNo;
+      yesBtn.removeEventListener('click', handleYes);
+      noBtn.removeEventListener('click', handleNo);
+      document.removeEventListener('keydown', handleKeydown);
+    }
+
+    function handleYes() {
+      cleanup();
+      resolve(true);
+    }
+
+    function handleNo() {
+      cleanup();
+      resolve(false);
+    }
+
+    function handleKeydown(e) {
+      if (e.key === 'Enter') {
+        handleYes();
+      } else if (e.key === 'Escape') {
+        handleNo();
+      }
+    }
+
+    yesBtn.addEventListener('click', handleYes);
+    noBtn.addEventListener('click', handleNo);
+    document.addEventListener('keydown', handleKeydown);
+    yesBtn.focus();
+  });
+}
+
+function customAlert(message, { title = null } = {}) {
   return new Promise((resolve) => {
     const modal = document.getElementById('custom-alert-modal');
+    const titleEl = modal?.querySelector('h3');
     const messageEl = document.getElementById('custom-alert-message');
     const okBtn = document.getElementById('custom-alert-ok');
+
+    const prevTitle = titleEl ? titleEl.textContent : null;
+    if (titleEl && title) {
+      titleEl.textContent = title;
+    }
     
     messageEl.textContent = message;
     modal.style.display = 'flex';
     
     function cleanup() {
       modal.style.display = 'none';
+      if (titleEl && prevTitle !== null) {
+        titleEl.textContent = prevTitle;
+      }
       okBtn.removeEventListener('click', handleOk);
       document.removeEventListener('keydown', handleKeydown);
     }
@@ -1395,23 +2019,56 @@ function rgbToHex(rgbString) {
   return "#" + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('');
 }
 
-function hexToRgb(hex) {
-  // Remove # if present
-  hex = hex.replace('#', '');
-  
-  // Parse hex to RGB values
-  const r = parseInt(hex.substr(0, 2), 16);
-  const g = parseInt(hex.substr(2, 2), 16);
-  const b = parseInt(hex.substr(4, 2), 16);
-  
-  return [r, g, b];
+function sanitizeColor(color) {
+  return colorValueToHex(color);
 }
 
-function sanitizeColor(color) {
-  return color.startsWith('rgb') ? rgbToHex(color) : color;
+function colorValueToHex(color) {
+  if (Array.isArray(color) && color.length >= 3) {
+    const [r, g, b] = color.map(value => Number(value));
+    if ([r, g, b].every(value => Number.isFinite(value))) {
+      return '#' + [r, g, b].map(value => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0')).join('').toUpperCase();
+    }
+  }
+  if (typeof color === 'string') {
+    const trimmed = color.trim();
+    if (/^[0-9a-fA-F]{6}$/.test(trimmed)) return `#${trimmed.toUpperCase()}`;
+    if (trimmed.startsWith('rgb')) return rgbToHex(trimmed).toUpperCase();
+    if (trimmed.startsWith('#')) return trimmed.toUpperCase();
+  }
+  return '#555555';
+}
+
+function normalizeConfigColorsToHex(config) {
+  if (!config || typeof config !== 'object') return config;
+  const nextConfig = cloneJsonObject(config);
+  ['led_color', 'released_color'].forEach(key => {
+    if (Array.isArray(nextConfig[key])) {
+      nextConfig[key] = nextConfig[key].map(color => colorValueToHex(color));
+    }
+  });
+  return nextConfig;
+}
+
+function hasValidConfigColors(config) {
+  return !!(
+    config &&
+    Array.isArray(config.led_color) &&
+    Array.isArray(config.released_color) &&
+    config.led_color.length >= 7 &&
+    config.released_color.length >= 7
+  );
+}
+
+function colorsAreOnlyUiDefaults(colors) {
+  const values = Object.values(colors || {}).map(color => String(color || '').toLowerCase());
+  if (values.length === 0) return true;
+  const defaultColors = new Set(['#555555', '#666666', '#ffffff', '']);
+  return values.every(color => defaultColors.has(color));
 }
 
 const getTextColor = bgColor => {
+  bgColor = colorValueToHex(bgColor);
   let r, g, b;
   if (bgColor.startsWith('#')) {
     const rgb = parseInt(bgColor.slice(1), 16);
@@ -1438,13 +2095,75 @@ const collectCurrentColors = () => {
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      let color = el.style.backgroundColor;
-      if (color?.startsWith('rgb')) color = rgbToHex(color);
-      preset[id] = color || '#ffffff';
+      preset[id] = colorValueToHex(el.style.backgroundColor || '');
     }
   });
   return preset;
 };
+
+function getMainFretToggleButtons() {
+  return Array.from(document.querySelectorAll('.fret-toggle .fret-toggle-button[data-state]'));
+}
+
+function getSelectedMainButtonState() {
+  const selectedToggle = document.querySelector('.fret-toggle .fret-toggle-button.selected[data-state]');
+  return selectedToggle?.dataset.state === 'pressed' ? 'pressed' : 'released';
+}
+
+function syncMainButtonSetVisibility(state = getSelectedMainButtonState()) {
+  const nextState = state === 'pressed' ? 'pressed' : 'released';
+  getMainFretToggleButtons().forEach(toggleBtn => {
+    toggleBtn.classList.toggle('selected', toggleBtn.dataset.state === nextState);
+  });
+
+  const pressedFrets = document.querySelector('.pressed-set.fret-set');
+  const releasedFrets = document.querySelector('.released-set.fret-set');
+  const activeStrums = document.querySelector('.active-set.strum-set');
+  const releasedStrums = document.querySelector('.released-set.strum-set');
+
+  if (pressedFrets) pressedFrets.style.display = nextState === 'pressed' ? 'flex' : 'none';
+  if (releasedFrets) releasedFrets.style.display = nextState === 'released' ? 'flex' : 'none';
+  if (activeStrums) activeStrums.style.display = nextState === 'pressed' ? 'flex' : 'none';
+  if (releasedStrums) releasedStrums.style.display = nextState === 'released' ? 'flex' : 'none';
+
+  return nextState;
+}
+
+const buttonColorConfigMap = {
+  'strum-up-active': ['led_color', 0],
+  'strum-down-active': ['led_color', 1],
+  'orange-fret-pressed': ['led_color', 2],
+  'blue-fret-pressed': ['led_color', 3],
+  'yellow-fret-pressed': ['led_color', 4],
+  'red-fret-pressed': ['led_color', 5],
+  'green-fret-pressed': ['led_color', 6],
+  'strum-up-released': ['released_color', 0],
+  'strum-down-released': ['released_color', 1],
+  'orange-fret-released': ['released_color', 2],
+  'blue-fret-released': ['released_color', 3],
+  'yellow-fret-released': ['released_color', 4],
+  'red-fret-released': ['released_color', 5],
+  'green-fret-released': ['released_color', 6]
+};
+
+function syncSelectedButtonColorsToConfig(elements, colorValue) {
+  if (!originalConfig || !Array.isArray(elements) || elements.length === 0) return;
+  const hex = colorValueToHex(colorValue);
+
+  elements.forEach(el => {
+    const id = el?.id || '';
+    const mapping = buttonColorConfigMap[id];
+    if (!mapping) return;
+
+    const [colorKey, colorIndex] = mapping;
+    if (!Array.isArray(originalConfig[colorKey])) {
+      originalConfig[colorKey] = Array(7).fill('#FFFFFF');
+    }
+    originalConfig[colorKey][colorIndex] = hex;
+  });
+
+  window.originalConfig = originalConfig;
+}
 
 const initFileQueue = () => ['config.json', 'presets.json', 'user_presets.json'];
 const PRESETS_CACHE_KEY = 'katasam.configurator.presets.cache.v1';
@@ -1535,6 +2254,7 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
 };
 
 const applyConfig = config => {
+  config = normalizeConfigColorsToHex(config);
   console.log('[DEBUG][applyConfig] Called with config:', config);
   if (!config) {
     console.error('[DEBUG][applyConfig] No config provided!');
@@ -1547,9 +2267,6 @@ const applyConfig = config => {
   }
   console.log('[DEBUG][applyConfig] originalConfig before assignment:', originalConfig);
 
-// Listen for deviceFilesLoaded event and update UI
-window.applyConfig = applyConfig;
-window.populatePresetDropdown = populatePresetDropdown;
   console.log('[applyConfig] Called with config:', config);
   originalConfig = config;
   console.log('[DEBUG][applyConfig] originalConfig after assignment:', originalConfig);
@@ -1570,7 +2287,7 @@ window.populatePresetDropdown = populatePresetDropdown;
     console.log(`[applyConfig] Fret ${i}: pressedBtn=`, pressedBtn, 'releasedBtn=', releasedBtn);
 
     if (pressedBtn) {
-      const bg = config.led_color[ledIndex];
+      const bg = colorValueToHex(config.led_color[ledIndex]);
       const text = getTextColor(bg);
       pressedBtn.style.backgroundColor = bg;
       pressedBtn.style.color = text;
@@ -1579,7 +2296,7 @@ window.populatePresetDropdown = populatePresetDropdown;
     }
 
     if (releasedBtn) {
-      const bg = config.released_color[ledIndex];
+      const bg = colorValueToHex(config.released_color[ledIndex]);
       const text = getTextColor(bg);
       releasedBtn.style.backgroundColor = bg;
       releasedBtn.style.color = text;
@@ -1596,7 +2313,7 @@ window.populatePresetDropdown = populatePresetDropdown;
     console.error('[applyConfig] No .active-set .strum-button elements found');
   }
   activeStrumButtons.forEach((el, i) => {
-    const bg = config.led_color[i];
+    const bg = colorValueToHex(config.led_color[i]);
     const text = getTextColor(bg);
     el.style.backgroundColor = bg;
     el.style.color = text;
@@ -1612,7 +2329,7 @@ window.populatePresetDropdown = populatePresetDropdown;
     console.error('[applyConfig] No .released-set .strum-button elements found');
   }
   releasedStrumButtons.forEach((el, i) => {
-    const bg = config.released_color[i];
+    const bg = colorValueToHex(config.released_color[i]);
     const text = getTextColor(bg);
     el.style.backgroundColor = bg;
     el.style.color = text;
@@ -1620,13 +2337,13 @@ window.populatePresetDropdown = populatePresetDropdown;
     console.log(`[applyConfig] Updated released-set strum-button ${i}: bg=${bg}, text=${text}`);
   });
 
-  const toggleBtn = document.querySelector('.fret-toggle-button.selected');
+  const toggleBtn = document.querySelector('.fret-toggle .fret-toggle-button.selected[data-state]');
   console.log('[DEBUG][applyConfig] End of applyConfig.');
   if (!toggleBtn) {
-    console.error('[applyConfig] No .fret-toggle-button.selected element found');
+    console.error('[applyConfig] No selected main fret toggle found');
   } else {
-    toggleBtn.click();
-    console.log('[applyConfig] Clicked .fret-toggle-button.selected');
+    syncMainButtonSetVisibility(toggleBtn.dataset.state);
+    console.log('[applyConfig] Synced main button visibility for selected state');
   }
   
   // Update hat status display when config is loaded
@@ -1649,6 +2366,10 @@ window.populatePresetDropdown = populatePresetDropdown;
     }, 100);
   }
 };
+
+// Listen for deviceFilesLoaded event and update UI
+window.applyConfig = applyConfig;
+window.populatePresetDropdown = populatePresetDropdown;
 
 // Function to update the toggle button text based on current hat_mode
 function updateToggleButtonText() {
@@ -1827,7 +2548,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Live whammy feedback polling (must be top-level in DOMContentLoaded)
   let whammyLiveInterval = null;
   let lastWhammyValue = null;
-  const whammyCalBtn = document.getElementById('whammy-cal-btn');
   const whammyModal = document.getElementById('whammy-modal');
   const whammyApplyBtn = document.getElementById('whammy-apply');
   const whammyCancelBtn = document.getElementById('whammy-cancel');
@@ -1851,11 +2571,26 @@ document.addEventListener('DOMContentLoaded', () => {
   let whammyConfig = null;
 
   function showWhammyModal() {
-    if (!originalConfig) return;
+    console.log('[showWhammyModal] Starting..., whammyModal=', !!whammyModal);
+    if (!whammyModal) {
+      console.error('[showWhammyModal] whammyModal element not found!');
+      return;
+    }
+    let sourceConfig = originalConfig || window.originalConfig || {};
+    const editorOpen = !!document.querySelector('.main.config-editor-active');
+    if (editorOpen && typeof readConfigFromEditor === 'function') {
+      const editorState = readConfigFromEditor();
+      if (!editorState.errors.length) {
+        sourceConfig = editorState.nextConfig;
+      }
+    }
+    if (!originalConfig && !window.originalConfig) {
+      console.warn('[showWhammyModal] No loaded config found, opening with defaults');
+    }
     whammyConfig = {
-      min: Number(originalConfig.whammy_min ?? 0),
-      max: Number(originalConfig.whammy_max ?? 65535),
-      reverse: !!originalConfig.whammy_reverse
+      min: Number(sourceConfig.whammy_min ?? 0),
+      max: Number(sourceConfig.whammy_max ?? 65535),
+      reverse: !!sourceConfig.whammy_reverse
     };
     whammyMinValue = whammyConfig.min;
     whammyMaxValue = whammyConfig.max;
@@ -1986,14 +2721,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Draw Min/Max draggable markers
     function drawBar(x, label) {
       ctx.save();
-      ctx.strokeStyle = '#bfa500';
+      ctx.strokeStyle = '#28D0AF';
       ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(x, barY - barHeight / 2);
       ctx.lineTo(x, barY + barHeight / 2);
       ctx.stroke();
       // Draw handle
-      ctx.fillStyle = draggingBar === label ? '#5DE3CB' : '#bfa500';
+      ctx.fillStyle = draggingBar === label ? '#5DE3CB' : '#28D0AF';
       ctx.beginPath();
       ctx.arc(x, barY, 10, 0, 2 * Math.PI);
       ctx.fill();
@@ -2140,45 +2875,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Remove slider event handlers
   // Live update handlers (no sliders)
   // Update whammyMinVal/whammyMaxVal text
-  function updateWhammyVals() {
-    const minEl = document.getElementById('whammy-min-val');
-    const maxEl = document.getElementById('whammy-max-val');
-    if (minEl) minEl.textContent = whammyMinValue;
-    if (maxEl) maxEl.textContent = whammyMaxValue;
-  }
-
-  // On modal open, set values from config
-  function showWhammyModal() {
-    if (!originalConfig) return;
-    whammyConfig = {
-      min: Number(originalConfig.whammy_min ?? 0),
-      max: Number(originalConfig.whammy_max ?? 65535),
-      reverse: !!originalConfig.whammy_reverse
-    };
-    whammyMinValue = whammyConfig.min;
-    whammyMaxValue = whammyConfig.max;
-    // Set input fields to config values before showing modal
-    if (whammyMinVal) {
-      whammyMinVal.value = whammyMinValue;
-      whammyMinVal.defaultValue = whammyMinValue;
-      whammyMinVal.setAttribute('value', whammyMinValue);
-      whammyMinVal.setAttribute('min', 0);
-      whammyMinVal.setAttribute('max', whammyMaxValue - 1);
-    }
-    if (whammyMaxVal) {
-      whammyMaxVal.value = whammyMaxValue;
-      whammyMaxVal.defaultValue = whammyMaxValue;
-      whammyMaxVal.setAttribute('value', whammyMaxValue);
-      whammyMaxVal.setAttribute('min', whammyMinValue + 1);
-      whammyMaxVal.setAttribute('max', 65535);
-    }
-    whammyReverse.checked = whammyConfig.reverse;
-    // Update UI before showing modal
-    updateWhammyVals();
-    drawWhammyGraph();
-    whammyModal.style.display = 'flex';
-    startWhammyLiveFeedback();
-  }
 
   // Only reverse checkbox needs event handler
   whammyReverse?.addEventListener('change', drawWhammyGraph);
@@ -2310,35 +3006,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
   whammyAutoCalBtn?.addEventListener('click', startAutoCalibration);
 
-  whammyCalBtn?.addEventListener('click', () => {
-    closeConfigMenu();
-    showWhammyModal();
-  });
   whammyCancelBtn?.addEventListener('click', hideWhammyModal);
 
   whammyApplyBtn?.addEventListener('click', async () => {
     console.log('[DEBUG] showWhammyModal called');
-    if (!originalConfig) {
-      console.log('[DEBUG] showWhammyModal: originalConfig missing');
-      return;
+    const nextWhammyConfig = {
+      whammy_min: whammyMinValue,
+      whammy_max: whammyMaxValue,
+      whammy_reverse: !!whammyReverse.checked
+    };
+
+    const setEditorFieldValue = (key, value) => {
+      const field = document.querySelector(`#config-editor-fields [data-key="${key}"]`);
+      if (!field) return false;
+      if (field.classList.contains('config-editor-bool-toggle')) {
+        field.dataset.booleanValue = value ? 'true' : 'false';
+        field.textContent = value ? 'True' : 'False';
+        field.classList.toggle('is-true', !!value);
+        field.classList.toggle('is-false', !value);
+      } else {
+        field.value = formatEditorValue(value);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return true;
+    };
+
+    const updatedEditorFields = [
+      setEditorFieldValue('whammy_min', nextWhammyConfig.whammy_min),
+      setEditorFieldValue('whammy_max', nextWhammyConfig.whammy_max),
+      setEditorFieldValue('whammy_reverse', nextWhammyConfig.whammy_reverse)
+    ].some(Boolean);
+
+    if (configEditorSourceConfig) {
+      configEditorSourceConfig.whammy_min = nextWhammyConfig.whammy_min;
+      configEditorSourceConfig.whammy_max = nextWhammyConfig.whammy_max;
+      configEditorSourceConfig.whammy_reverse = nextWhammyConfig.whammy_reverse;
     }
-    // Update config
-    originalConfig.whammy_min = whammyMinValue;
-    originalConfig.whammy_max = whammyMaxValue;
-    originalConfig.whammy_reverse = whammyReverse.checked;
-    // Save to device and robustly reload
-    try {
-      connectedPort.write("WRITEFILE:config.json\n");
-      connectedPort.write(JSON.stringify(originalConfig) + "\n");
-      connectedPort.write("END\n");
-      showToast("Whammy calibration applied, rebooting...", "success");
-      hideWhammyModal();
-      // Use robust reboot and reload procedure
-      setTimeout(() => rebootAndReload('config.json'), 500);
-    } catch (err) {
-      console.error("Failed to apply whammy calibration:", err);
-      showToast("Failed to write config", "error");
+
+    if (!updatedEditorFields) {
+      const nextConfig = cloneJsonObject(originalConfig || window.originalConfig || {});
+      nextConfig.whammy_min = nextWhammyConfig.whammy_min;
+      nextConfig.whammy_max = nextWhammyConfig.whammy_max;
+      nextConfig.whammy_reverse = nextWhammyConfig.whammy_reverse;
+      originalConfig = cloneJsonObject(nextConfig);
+      window.originalConfig = cloneJsonObject(nextConfig);
+      configDirty = true;
+      const applyBtn = document.getElementById('apply-config-btn');
+      if (applyBtn) applyBtn.style.display = 'inline-block';
     }
+
+    showToast('Whammy calibration updated in Config Editor. Use Apply to Session when ready.', 'success');
+    hideWhammyModal();
   });
   console.log("🌱 App initialized and DOM fully loaded.");
   
@@ -2493,6 +3211,38 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 
+  function isRp2040BootselInfo(content) {
+    return /RP2040|RPI-RP2|Board-ID.*RP2|Model.*RP2/i.test(content || '');
+  }
+
+  function findBootselVolumes() {
+    const volumes = [];
+
+    if (process.platform === 'win32') {
+      for (let i = 65; i <= 90; i++) {
+        const driveLetter = String.fromCharCode(i);
+        volumes.push({ rootPath: driveLetter + ':\\', infoPath: driveLetter + ':\\INFO_UF2.TXT' });
+      }
+      return volumes;
+    }
+
+    const mountRoots = process.platform === 'darwin' ? ['/Volumes'] : ['/media', '/run/media', '/mnt'];
+    for (const mountRoot of mountRoots) {
+      try {
+        if (!fs.existsSync(mountRoot)) continue;
+        const mountNames = fs.readdirSync(mountRoot);
+        for (const mountName of mountNames) {
+          const rootPath = path.join(mountRoot, mountName);
+          volumes.push({ rootPath, infoPath: path.join(rootPath, 'INFO_UF2.TXT') });
+        }
+      } catch (err) {
+        console.log(`[BOOTSEL] Could not scan mount root ${mountRoot}:`, err.message);
+      }
+    }
+
+    return volumes;
+  }
+
   function detectUnprogrammedController() {
     // Don't detect if already prompted, currently flashing
     if (bootselPrompted || isFlashingFirmware) {
@@ -2507,28 +3257,26 @@ document.addEventListener('DOMContentLoaded', () => {
     
     console.log("👀 Checking for BOOTSEL volumes... bootselPrompted:", bootselPrompted, "isFlashingFirmware:", isFlashingFirmware);
     
-    for (let i = 65; i <= 90; i++) {
-      const driveLetter = String.fromCharCode(i);
-      const infoPath = driveLetter + ':\\INFO_UF2.TXT';
+    for (const volume of findBootselVolumes()) {
       try {
-        if (fs.existsSync(infoPath)) {
-          const content = fs.readFileSync(infoPath, 'utf8');
-          console.log(`📁 Found INFO_UF2.TXT at ${driveLetter}:\\`);
+        if (fs.existsSync(volume.infoPath)) {
+          const content = fs.readFileSync(volume.infoPath, 'utf8');
+          console.log(`📁 Found INFO_UF2.TXT at ${volume.rootPath}`);
           console.log(`📄 Content preview:`, content.substring(0, 200));
           
-          if (/RP2040|RPI-RP2|Board-ID.*RP2|Model.*RP2/i.test(content)) {
-            console.log('✅ RP2040 BOOTSEL device detected at ' + driveLetter + ':\\');
+          if (isRp2040BootselInfo(content)) {
+            console.log('✅ RP2040 BOOTSEL device detected at ' + volume.rootPath);
             console.log('🚀 Setting bootselPrompted = true and calling promptFirmwareFlash');
             bootselPrompted = true;
             updateStatus('Controller detected in BOOTSEL mode', false);
-            promptFirmwareFlash(driveLetter + ':\\');
+            promptFirmwareFlash(volume.rootPath);
             return; // Exit early when BOOTSEL device is found, don't resume scanning
           } else {
             console.log('❌ Content does not match RP2040 pattern');
           }
         }
       } catch (err) {
-        console.log(`⚠️ Error accessing ${driveLetter}:\\INFO_UF2.TXT:`, err.message);
+        console.log(`⚠️ Error accessing ${volume.infoPath}:`, err.message);
       }
     }
     
@@ -2571,6 +3319,106 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const latestFirmwareReleaseApi = 'https://api.github.com/repos/wattsy74/KATASAM-MODS/releases/latest';
+
+  function normalizeBootselHardwareVersion(version) {
+    const value = String(version || '').trim().toLowerCase();
+    if (value === 'v1' || /\bv1\b/.test(value)) return 'v1';
+    if (value === 'v2' || /\bv2\b/.test(value)) return 'v2';
+    return null;
+  }
+
+  function readBootselHardwareVersion(drivePath) {
+    try {
+      const hardwareVersionPath = path.join(drivePath, 'hardware_version.txt');
+      if (fs.existsSync(hardwareVersionPath)) {
+        const version = normalizeBootselHardwareVersion(fs.readFileSync(hardwareVersionPath, 'utf8'));
+        if (version) {
+          console.log('[FirmwareDownload] Hardware version from BOOTSEL marker:', version);
+          return version;
+        }
+      }
+    } catch (err) {
+      console.log('[FirmwareDownload] Could not read BOOTSEL hardware version marker:', err.message);
+    }
+
+    return null;
+  }
+
+  async function chooseBootselHardwareVersion(drivePath) {
+    const detectedVersion = readBootselHardwareVersion(drivePath);
+    if (detectedVersion) return detectedVersion;
+
+    console.log('[FirmwareDownload] No BOOTSEL hardware marker found; defaulting firmware variant to V2');
+    return 'v2';
+  }
+
+  function pickFirmwareAssetFromRelease(release, hardwareVersion) {
+    const assets = Array.isArray(release?.assets) ? release.assets : [];
+    const uf2Assets = assets.filter(asset => asset?.name && asset?.browser_download_url && asset.name.toLowerCase().endsWith('.uf2'));
+    if (!uf2Assets.length) return null;
+
+    const classicVariant = hardwareVersion ? uf2Assets.find(asset => new RegExp(`^classic[-_]?${hardwareVersion}\\.uf2$`, 'i').test(asset.name)) : null;
+    if (classicVariant) return classicVariant;
+
+    const preferredPatterns = [
+      /^bgg-fw.*\.uf2$/i,
+      /^katasam.*\.uf2$/i,
+      /firmware.*\.uf2$/i
+    ];
+
+    for (const pattern of preferredPatterns) {
+      const match = uf2Assets.find(asset => pattern.test(asset.name));
+      if (match) return match;
+    }
+
+    if (uf2Assets.length === 1) return uf2Assets[0];
+    return null;
+  }
+
+  async function downloadLatestFirmwareFile(drivePath) {
+    console.log('[FirmwareDownload] Fetching latest firmware release:', latestFirmwareReleaseApi);
+    updateStatus('Checking latest firmware release...', false);
+
+    const releaseResponse = await fetch(latestFirmwareReleaseApi, {
+      headers: { Accept: 'application/vnd.github+json' }
+    });
+
+    if (!releaseResponse.ok) {
+      throw new Error(`GitHub release lookup failed: HTTP ${releaseResponse.status}`);
+    }
+
+    const release = await releaseResponse.json();
+    const hardwareVersion = await chooseBootselHardwareVersion(drivePath);
+    const asset = pickFirmwareAssetFromRelease(release, hardwareVersion);
+    if (!asset) {
+      throw new Error(`No matching ${hardwareVersion.toUpperCase()} UF2 firmware asset found in latest GitHub release`);
+    }
+
+    console.log(`[FirmwareDownload] Selected ${asset.name} from release ${release.tag_name || release.name || 'latest'}`);
+    updateStatus(`Downloading ${asset.name}...`, false);
+
+    const firmwareResponse = await fetch(asset.browser_download_url);
+    if (!firmwareResponse.ok) {
+      throw new Error(`Firmware download failed: HTTP ${firmwareResponse.status}`);
+    }
+
+    const arrayBuffer = await firmwareResponse.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    if (!buffer.length) {
+      throw new Error('Downloaded firmware file is empty');
+    }
+
+    const cacheDir = path.join(os.tmpdir(), 'katasam-configurator-firmware');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    const safeFileName = asset.name.replace(/[^a-z0-9._-]/gi, '_');
+    const firmwarePath = path.join(cacheDir, safeFileName);
+    fs.writeFileSync(firmwarePath, buffer);
+
+    console.log(`[FirmwareDownload] Downloaded ${buffer.length} bytes to ${firmwarePath}`);
+    return firmwarePath;
+  }
+
   function findFirmwareFile() {
     // Look for any firmware file matching bgg-fw*.uf2 pattern (with or without version)
     try {
@@ -2606,20 +3454,110 @@ document.addEventListener('DOMContentLoaded', () => {
     return fallbackPath;
   }
 
-  function flashFirmwareTo(drivePath) {
-    const firmwarePath = findFirmwareFile();
+  function resetBootselFlashState() {
+    isFlashingFirmware = false;
+    bootselPrompted = false;
+    if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
+      window.multiDeviceManager.resumeScanning();
+    }
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async function copyFileWithTimeout(sourcePath, targetPath, timeoutMs) {
+    if (process.platform !== 'win32') {
+      return new Promise((resolve, reject) => {
+        console.log(`[FirmwareFlash] Running bounded cp with ${timeoutMs / 1000}s timeout`);
+        execFile('cp', [sourcePath, targetPath], { timeout: timeoutMs, killSignal: 'SIGKILL' }, (err) => {
+          if (err) {
+            if (err.killed || err.signal === 'SIGKILL') {
+              reject(new Error(`Timed out copying firmware after ${timeoutMs / 1000}s`));
+            } else {
+              reject(err);
+            }
+            return;
+          }
+          resolve();
+        });
+      });
+    }
+
+    let timeoutId;
+    try {
+      await Promise.race([
+        fs.promises.copyFile(sourcePath, targetPath),
+        new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(`Timed out copying firmware after ${timeoutMs / 1000}s`)), timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  async function copyFirmwareToBootsel(sourcePath, targetPath, drivePath) {
+    const sourceStats = fs.statSync(sourcePath);
+    if (!sourceStats.size) {
+      throw new Error(`Firmware file is empty: ${sourcePath}`);
+    }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (!fs.existsSync(drivePath)) {
+          throw new Error(`BOOTSEL drive is not mounted: ${drivePath}`);
+        }
+
+        console.log(`[FirmwareFlash] Copy attempt ${attempt}/3: ${sourcePath} -> ${targetPath}`);
+        await copyFileWithTimeout(sourcePath, targetPath, 15000);
+
+        if (process.platform !== 'win32') {
+          try {
+            require('child_process').execSync('sync');
+          } catch (err) {
+            console.warn('[FirmwareFlash] Filesystem sync failed, continuing:', err.message);
+          }
+        }
+
+        if (fs.existsSync(targetPath)) {
+          const targetStats = fs.statSync(targetPath);
+          if (!targetStats.size) {
+            throw new Error('Copied firmware file is empty');
+          }
+          if (targetStats.size !== sourceStats.size) {
+            throw new Error(`Copied firmware size mismatch: expected ${sourceStats.size}, got ${targetStats.size}`);
+          }
+        } else if (fs.existsSync(drivePath)) {
+          console.warn('[FirmwareFlash] Destination file not visible after copy, but BOOTSEL drive is still mounted');
+        } else {
+          console.log('[FirmwareFlash] BOOTSEL drive disappeared after copy; treating as normal reboot');
+        }
+
+        return;
+      } catch (err) {
+        console.warn(`[FirmwareFlash] Copy attempt ${attempt} failed:`, err.message);
+        if (attempt === 3) throw err;
+        await wait(500 * attempt);
+      }
+    }
+  }
+
+  async function flashFirmwareTo(drivePath) {
+    let firmwarePath;
+    try {
+      firmwarePath = await downloadLatestFirmwareFile(drivePath);
+    } catch (err) {
+      console.warn('[FirmwareDownload] Latest firmware download unavailable, falling back to bundled firmware:', err.message);
+      showToast('Could not download latest firmware. Using bundled fallback.', 'warning');
+      firmwarePath = findFirmwareFile();
+    }
     
     // Check if firmware file actually exists
     if (!fs.existsSync(firmwarePath)) {
       console.error("❌ Firmware file not found:", firmwarePath);
       showToast("Firmware file not found. Please run UF2MakerScript.ps1 to generate firmware.", 'error');
-      // Reset flags on error
-      isFlashingFirmware = false;
-      bootselPrompted = false;
-      // Resume scanning on error
-      if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
-        window.multiDeviceManager.resumeScanning();
-      }
+      resetBootselFlashState();
       return;
     }
     
@@ -2631,49 +3569,27 @@ document.addEventListener('DOMContentLoaded', () => {
     isFlashingFirmware = true; // Set flag during flashing
 
     try {
-      fs.copyFile(firmwarePath, targetPath, err => {
-        if (err) {
-          console.error("❌ Flash error:", err);
-          showToast("Flash failed ❌", "error");
-          // Reset flags on error
-          isFlashingFirmware = false;
-          bootselPrompted = false;
-          // Resume multi-device scanning
-          if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
-            window.multiDeviceManager.resumeScanning();
-          }
-          return;
+      await copyFirmwareToBootsel(firmwarePath, targetPath, drivePath);
+
+      const time = ((Date.now() - start) / 1000).toFixed(2);
+      console.log('Firmware copied in ' + time + 's');
+      showToast('Firmware flashed in ' + time + 's', 'success');
+
+      isFlashingFirmware = false;
+      bootselPrompted = false;
+
+      setTimeout(() => {
+        updateStatus("Waiting for controller to reboot...", false);
+        if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
+          window.multiDeviceManager.resumeScanning();
         }
-
-        const time = ((Date.now() - start) / 1000).toFixed(2);
-        console.log('Firmware copied in ' + time + 's');
-        showToast('Firmware flashed in ' + time + 's', 'success');
-
-        // Reset flags after successful flash
-        isFlashingFirmware = false;
-        bootselPrompted = false;
-
-        setTimeout(() => {
-          updateStatus("Waiting for controller to reboot...", false);
-          
-          // Resume multi-device scanning after device reboots
-          if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
-            window.multiDeviceManager.resumeScanning();
-          }
-          
-          detectRebootedController();
-        }, 5000); // Increased from 3000 to 5000ms to give more time for device to reboot
-      });
+        detectRebootedController();
+      }, 1500);
     } catch (err) {
       console.error("❌ Flash error:", err);
       showToast("Flash failed ❌", "error");
-      // Reset flags on error
-      isFlashingFirmware = false;
-      bootselPrompted = false;
-      // Resume scanning on error
-      if (window.multiDeviceManager && window.multiDeviceManager.resumeScanning) {
-        window.multiDeviceManager.resumeScanning();
-      }
+      updateStatus("Firmware flash failed", false, '#e74c3c');
+      resetBootselFlashState();
     }
   }
 
@@ -2721,7 +3637,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Set as active device if not already
             if (window.multiDeviceManager.setActiveDevice) {
-              await window.multiDeviceManager.setActiveDevice(device);
+              window.multiDeviceManager.setActiveDevice(device);
             }
             
             showToast("Controller rebooted and ready 🎉", "success");
@@ -2730,6 +3646,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Update UI
             if (window.updateActiveButtonText) {
               window.updateActiveButtonText(device);
+            }
+
+            try {
+              await applyDetectedHardwareDefaultsToSession('post-flash-reconnect');
+            } catch (defaultsErr) {
+              console.warn('[post-flash] Failed to apply detected defaults:', defaultsErr);
             }
             
             return; // Success - stop polling
@@ -2752,6 +3674,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Update UI
                 if (window.updateActiveButtonText) {
                   window.updateActiveButtonText(device);
+                }
+
+                try {
+                  await applyDetectedHardwareDefaultsToSession('post-flash-connect');
+                } catch (defaultsErr) {
+                  console.warn('[post-flash] Failed to apply detected defaults:', defaultsErr);
                 }
                 
                 return; // Success - stop polling
@@ -2812,6 +3740,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (/^#?[0-9A-Fa-f]{6}$/.test(value)) {
       const hex = value.startsWith("#") ? value : `#${value}`;
       colorPicker.color.hexString = hex;
+      syncSelectedButtonColorsToConfig(selectedElements, hex);
 
       // ✅ Trigger LED preview ONLY when sixth digit is reached
       if (hex.length === 7) { // includes the #
@@ -2843,6 +3772,7 @@ document.addEventListener('DOMContentLoaded', () => {
       el.style.color = text;
       liveColors.set(el, { bg, text });
     });
+    syncSelectedButtonColorsToConfig(selectedElements, color.hexString);
     checkIfUserPresetModified();
     configDirty = true;
     document.getElementById('apply-config-btn').style.display = 'inline-block';
@@ -2906,8 +3836,8 @@ document.addEventListener('DOMContentLoaded', () => {
           // Add other config fields as needed
         };
       }
-      // Defensive: convert all color values to hex if needed (handles legacy rgb)
-      const safePresetObj = Object.fromEntries(Object.entries(presetObj).map(([k, v]) => [k, v && v.startsWith('rgb') ? rgbToHex(v) : v]));
+      // Defensive: convert all color values to hex if needed (handles legacy rgb and RGB tuples)
+      const safePresetObj = Object.fromEntries(Object.entries(presetObj).map(([k, v]) => [k, colorValueToHex(v)]));
       for (const [label, hex] of Object.entries(safePresetObj)) {
         if (label.endsWith('-pressed')) {
           // Only update pressed buttons
@@ -2979,15 +3909,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       // --- END PATCH ---
       // Always start in released state after preset load
-      document.querySelectorAll('.fret-toggle-button').forEach(b => b.classList.remove('selected'));
-      const releasedToggle = document.querySelector('.fret-toggle-button[data-state="released"]');
-      if (releasedToggle) releasedToggle.classList.add('selected');
-      document.querySelector('.pressed-set').style.display = 'none';
-      document.querySelector('.released-set.fret-set').style.display = 'flex';
-      document.querySelector('.active-set').style.display = 'none';
-      document.querySelector('.released-set.strum-set').style.display = 'flex';
+      syncMainButtonSetVisibility('released');
       restoreLiveColors('.released-set .fret-button');
       restoreLiveColors('.released-set .strum-button');
+      setTimeout(() => {
+        console.log('[PREVIEW] Preset select, previewing released state');
+        sendPreviewForVisibleButtons('released');
+      }, 30);
       // --- PATCH: Always enable Apply to Config button and set configDirty ---
       configDirty = true;
       const applyBtn = document.getElementById('apply-config-btn');
@@ -3116,7 +4044,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Always preview released colors if released state is selected, otherwise pressed
-      let state = document.querySelector('.fret-toggle-button.selected')?.dataset.state;
+      let state = document.querySelector('.fret-toggle .fret-toggle-button.selected[data-state]')?.dataset.state;
       if (!state) state = 'released';
       setTimeout(() => {
         console.log(`[PREVIEW] User preset select, previewing state: ${state}`);
@@ -3259,18 +4187,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   };
 
-  document.querySelectorAll('.fret-toggle-button').forEach(btn => {
+  getMainFretToggleButtons().forEach(btn => {
     btn.addEventListener('pointerup', () => {
-      document.querySelectorAll('.fret-toggle-button').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
       clearSelections();
 
-      const state = btn.dataset.state;
-
-      document.querySelector('.pressed-set').style.display = state === 'pressed' ? 'flex' : 'none';
-      document.querySelector('.released-set.fret-set').style.display = state === 'released' ? 'flex' : 'none';
-      document.querySelector('.active-set').style.display = state === 'pressed' ? 'flex' : 'none';
-      document.querySelector('.released-set.strum-set').style.display = state === 'released' ? 'flex' : 'none';
+      const state = syncMainButtonSetVisibility(btn.dataset.state);
 
       restoreLiveColors(state === 'pressed' ? '.pressed-set .fret-button' : '.released-set .fret-button');
       restoreLiveColors(state === 'pressed' ? '.active-set .strum-button' : '.released-set .strum-button');
@@ -3482,12 +4403,25 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     return;
   }
 
+  if (!hasValidConfigColors(originalConfig)) {
+    console.warn('[DEBUG][apply-config] Refusing to write config because valid color arrays are not loaded:', originalConfig);
+    updateStatus('Config colors are not loaded', false);
+    customAlert('Configuration colours are not loaded yet, so the app will not write this config to the device. Reconnect or reload the device files first.');
+    return;
+  }
+
   // Modular: Use configUtils to update color arrays in config
   const configUtils = require('./configUtils.js');
   // Collect current UI colors into a preset-like object
   // Use the unified collectCurrentColors (always converts rgb to hex)
   const currentColors = collectCurrentColors();
   console.log('[DEBUG][apply-config] currentColors collected:', currentColors);
+  if (colorsAreOnlyUiDefaults(currentColors)) {
+    console.warn('[DEBUG][apply-config] Refusing to write default/grey UI colors to device:', currentColors);
+    updateStatus('UI colours are not loaded', false);
+    customAlert('The UI colours are still at their default grey state, so the app will not write them to the device. Reconnect or reload the device files first.');
+    return;
+  }
   configUtils.applyPresetToConfig(originalConfig, currentColors);
   console.log('[DEBUG][apply-config] originalConfig after applyPresetToConfig:', JSON.stringify(originalConfig, null, 2));
 
@@ -3506,30 +4440,9 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
   }
 
   try {
-    // Convert HEX colors to RGB tuples for firmware compatibility
-    const configForDevice = JSON.parse(JSON.stringify(originalConfig)); // Deep copy
-    
-    // Convert led_color array from HEX to RGB tuples
-    if (configForDevice.led_color && Array.isArray(configForDevice.led_color)) {
-      configForDevice.led_color = configForDevice.led_color.map(color => {
-        if (typeof color === 'string' && color.startsWith('#')) {
-          return hexToRgb(color);
-        }
-        return color; // Already in correct format or invalid
-      });
-    }
-    
-    // Convert released_color array from HEX to RGB tuples  
-    if (configForDevice.released_color && Array.isArray(configForDevice.released_color)) {
-      configForDevice.released_color = configForDevice.released_color.map(color => {
-        if (typeof color === 'string' && color.startsWith('#')) {
-          return hexToRgb(color);
-        }
-        return color; // Already in correct format or invalid
-      });
-    }
-    
-    console.log('[DEBUG][apply-config] Converting colors for device compatibility:');
+    const configForDevice = normalizeConfigColorsToHex(originalConfig);
+
+    console.log('[DEBUG][apply-config] Normalized colors for HEX config write:');
     console.log('[DEBUG][apply-config] Original led_color:', originalConfig.led_color);
     console.log('[DEBUG][apply-config] Device led_color:', configForDevice.led_color);
     console.log('[DEBUG][apply-config] Original released_color:', originalConfig.released_color);
@@ -3915,6 +4828,612 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
   document.getElementById('upload-presets-btn')?.addEventListener('click', () => {
     closeConfigMenu();
     document.getElementById('presets-file-input').click();
+  });
+
+  const mainPanel = document.querySelector('.main');
+  const configEditorBtn = document.getElementById('config-editor-btn');
+  const configEditorPage = document.getElementById('config-editor-page');
+  const configEditorFields = document.getElementById('config-editor-fields');
+  const configEditorBackBtn = document.getElementById('config-editor-back-btn');
+  const configEditorApplyBtn = document.getElementById('config-editor-apply-btn');
+  const configEditorAutoDefaultsBtn = document.getElementById('config-editor-auto-defaults-btn');
+  const configEditorReloadBtn = document.getElementById('config-editor-reload-btn');
+  let configEditorSourceConfig = null;
+
+  const configEditorLabels = {
+    device_name: 'Device Name',
+    _metadata: 'Metadata',
+    UP: 'DPad Up',
+    DOWN: 'DPad Down',
+    LEFT: 'DPad Left',
+    RIGHT: 'DPad Right',
+    GREEN_FRET: 'Green Fret',
+    GREEN_FRET_led: 'Green Fret LED Index',
+    RED_FRET: 'Red Fret',
+    RED_FRET_led: 'Red Fret LED Index',
+    YELLOW_FRET: 'Yellow Fret',
+    YELLOW_FRET_led: 'Yellow Fret LED Index',
+    BLUE_FRET: 'Blue Fret',
+    BLUE_FRET_led: 'Blue Fret LED Index',
+    ORANGE_FRET: 'Orange Fret',
+    ORANGE_FRET_led: 'Orange Fret LED Index',
+    STRUM_UP: 'Strum Up',
+    STRUM_UP_led: 'Strum Up LED Index',
+    STRUM_DOWN: 'Strum Down',
+    STRUM_DOWN_led: 'Strum Down LED Index',
+    TILT: 'Tilt',
+    SELECT: 'Select',
+    START: 'Start',
+    GUIDE: 'Guide',
+    WHAMMY: 'Whammy',
+    neopixel_pin: 'LED Data Pin',
+    joystick_x_pin: 'Joystick X Pin',
+    joystick_y_pin: 'Joystick Y Pin',
+    hat_mode: 'Hat Mode',
+    led_brightness: 'LED Brightness',
+    whammy_min: 'Whammy Min',
+    whammy_max: 'Whammy Max',
+    whammy_reverse: 'Whammy Reverse',
+    tilt_wave_enabled: 'Tilt Wave Enabled',
+    led_color: 'Pressed LED Colors',
+    released_color: 'Released LED Colors'
+  };
+
+  function getConfigEditorLabel(key) {
+    return configEditorLabels[key] || key;
+  }
+
+  const configEditorColorIndexMap = {
+    STRUM_UP: 0,
+    STRUM_DOWN: 1,
+    ORANGE_FRET: 2,
+    BLUE_FRET: 3,
+    YELLOW_FRET: 4,
+    RED_FRET: 5,
+    GREEN_FRET: 6
+  };
+
+  function getConfigColorValue(configObj, sourceKey, colorSet) {
+    const colorIndex = configEditorColorIndexMap[sourceKey];
+    if (typeof colorIndex !== 'number') return '';
+    const colorArray = Array.isArray(configObj[colorSet]) ? configObj[colorSet] : [];
+    const value = colorArray[colorIndex];
+    return value === undefined ? '' : value;
+  }
+
+  function setConfigColorValue(configObj, sourceKey, colorSet, value) {
+    const colorIndex = configEditorColorIndexMap[sourceKey];
+    if (typeof colorIndex !== 'number') return;
+    if (!Array.isArray(configObj[colorSet])) {
+      configObj[colorSet] = [];
+    }
+    configObj[colorSet][colorIndex] = value;
+  }
+
+  function createEditorInput(fieldDef, value) {
+    if (fieldDef.type === 'key' && fieldDef.key === 'hat_mode') {
+      const modeToggleEl = document.createElement('button');
+      modeToggleEl.type = 'button';
+      modeToggleEl.className = 'config-editor-mode-toggle';
+      modeToggleEl.dataset.fieldType = 'key';
+      modeToggleEl.dataset.key = fieldDef.key;
+
+      const normalizeMode = (modeValue) => {
+        const normalized = String(modeValue || '').toLowerCase();
+        return normalized === 'joystick' ? 'joystick' : 'dpad';
+      };
+
+      const renderMode = () => {
+        const mode = normalizeMode(modeToggleEl.dataset.modeValue);
+        modeToggleEl.dataset.modeValue = mode;
+        modeToggleEl.textContent = mode === 'joystick' ? 'Joystick' : 'DPad';
+        modeToggleEl.classList.toggle('is-joystick', mode === 'joystick');
+        modeToggleEl.classList.toggle('is-dpad', mode !== 'joystick');
+      };
+
+      modeToggleEl.dataset.modeValue = normalizeMode(value);
+      modeToggleEl.addEventListener('click', () => {
+        const current = normalizeMode(modeToggleEl.dataset.modeValue);
+        modeToggleEl.dataset.modeValue = current === 'joystick' ? 'dpad' : 'joystick';
+        renderMode();
+        applyHatModeVisibility(modeToggleEl.dataset.modeValue);
+      });
+
+      renderMode();
+      return modeToggleEl;
+    }
+
+    if (typeof value === 'boolean') {
+      const toggleEl = document.createElement('button');
+      toggleEl.type = 'button';
+      toggleEl.className = 'config-editor-bool-toggle';
+      toggleEl.dataset.booleanValue = value ? 'true' : 'false';
+
+      if (fieldDef.type === 'key') {
+        toggleEl.dataset.fieldType = 'key';
+        toggleEl.dataset.key = fieldDef.key;
+      } else {
+        toggleEl.dataset.fieldType = 'color';
+        toggleEl.dataset.sourceKey = fieldDef.sourceKey;
+        toggleEl.dataset.colorSet = fieldDef.colorSet;
+      }
+
+      const renderToggle = () => {
+        const isTrue = toggleEl.dataset.booleanValue === 'true';
+        toggleEl.textContent = isTrue ? 'True' : 'False';
+        toggleEl.classList.toggle('is-true', isTrue);
+        toggleEl.classList.toggle('is-false', !isTrue);
+      };
+
+      toggleEl.addEventListener('click', () => {
+        const isTrue = toggleEl.dataset.booleanValue === 'true';
+        toggleEl.dataset.booleanValue = isTrue ? 'false' : 'true';
+        renderToggle();
+      });
+
+      renderToggle();
+      return toggleEl;
+    }
+
+    const valueEl = document.createElement('textarea');
+    valueEl.className = 'config-editor-value';
+    valueEl.value = formatEditorValue(value);
+    valueEl.rows = Array.isArray(value) || (value && typeof value === 'object') ? 3 : 1;
+
+    if (fieldDef.type === 'key') {
+      valueEl.dataset.fieldType = 'key';
+      valueEl.dataset.key = fieldDef.key;
+    } else {
+      valueEl.dataset.fieldType = 'color';
+      valueEl.dataset.sourceKey = fieldDef.sourceKey;
+      valueEl.dataset.colorSet = fieldDef.colorSet;
+    }
+
+    return valueEl;
+  }
+
+  function normalizePreviewColor(raw) {
+    if (raw === null || raw === undefined) return null;
+    const text = String(raw).trim();
+    if (!text) return null;
+
+    if (/^#[0-9a-fA-F]{6}$/.test(text)) return text;
+    if (/^#[0-9a-fA-F]{3}$/.test(text)) return text;
+
+    const rgbMatch = text.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+    if (rgbMatch) {
+      const r = Math.max(0, Math.min(255, Number(rgbMatch[1])));
+      const g = Math.max(0, Math.min(255, Number(rgbMatch[2])));
+      const b = Math.max(0, Math.min(255, Number(rgbMatch[3])));
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
+    // Supports JSON array color input like [255, 77, 0]
+    if (/^\[.*\]$/.test(text)) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed) && parsed.length >= 3) {
+          const r = Math.max(0, Math.min(255, Number(parsed[0])));
+          const g = Math.max(0, Math.min(255, Number(parsed[1])));
+          const b = Math.max(0, Math.min(255, Number(parsed[2])));
+          if (![r, g, b].some(Number.isNaN)) {
+            return `rgb(${r}, ${g}, ${b})`;
+          }
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return null;
+  }
+
+  function previewColorToHex(colorValue) {
+    if (!colorValue) return null;
+
+    if (/^#[0-9a-fA-F]{6}$/.test(colorValue)) {
+      return colorValue.toUpperCase();
+    }
+
+    if (/^#[0-9a-fA-F]{3}$/.test(colorValue)) {
+      const r = colorValue[1];
+      const g = colorValue[2];
+      const b = colorValue[3];
+      return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+    }
+
+    const rgbMatch = colorValue.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+    if (!rgbMatch) return null;
+
+    const toHex = (num) => {
+      const bounded = Math.max(0, Math.min(255, Number(num)));
+      return bounded.toString(16).padStart(2, '0');
+    };
+
+    return `#${toHex(rgbMatch[1])}${toHex(rgbMatch[2])}${toHex(rgbMatch[3])}`.toUpperCase();
+  }
+
+  function updateColorPreview(inputEl, swatchEl) {
+    const color = normalizePreviewColor(inputEl.value);
+    if (!color) {
+      swatchEl.style.display = 'none';
+      swatchEl.style.background = 'transparent';
+      return;
+    }
+    swatchEl.style.display = 'block';
+    swatchEl.style.background = color;
+  }
+
+  function createEditorField(fieldDef, configObj) {
+    const fieldEl = document.createElement('div');
+    fieldEl.className = 'config-editor-field';
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'config-editor-key';
+    labelEl.textContent = fieldDef.label;
+
+    const value = fieldDef.type === 'key'
+      ? configObj[fieldDef.key]
+      : getConfigColorValue(configObj, fieldDef.sourceKey, fieldDef.colorSet);
+    const inputEl = createEditorInput(fieldDef, value);
+    inputEl.dataset.fieldLabel = fieldDef.label;
+
+    const inputWrap = document.createElement('div');
+    inputWrap.className = 'config-editor-input-wrap';
+
+    if (inputEl.classList.contains('config-editor-value')) {
+      const swatchEl = document.createElement('div');
+      swatchEl.className = 'config-editor-color-swatch';
+
+      const pickerEl = document.createElement('input');
+      pickerEl.type = 'color';
+      pickerEl.className = 'config-editor-hidden-color-picker';
+
+      inputWrap.appendChild(inputEl);
+      inputWrap.appendChild(swatchEl);
+      inputWrap.appendChild(pickerEl);
+
+      // Show a swatch when the field value is a previewable color format.
+      const syncSwatchAndPicker = () => {
+        updateColorPreview(inputEl, swatchEl);
+        const preview = normalizePreviewColor(inputEl.value);
+        const hex = previewColorToHex(preview);
+        if (hex) {
+          pickerEl.value = hex;
+          swatchEl.dataset.pickable = 'true';
+        } else {
+          swatchEl.dataset.pickable = 'false';
+        }
+      };
+
+      syncSwatchAndPicker();
+      inputEl.addEventListener('input', syncSwatchAndPicker);
+      swatchEl.addEventListener('click', () => {
+        if (swatchEl.dataset.pickable !== 'true') return;
+        pickerEl.click();
+      });
+
+      pickerEl.addEventListener('input', () => {
+        inputEl.value = pickerEl.value.toUpperCase();
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    } else {
+      inputWrap.classList.add('no-swatch');
+      inputWrap.appendChild(inputEl);
+    }
+
+    fieldEl.appendChild(labelEl);
+    fieldEl.appendChild(inputWrap);
+    return fieldEl;
+  }
+
+  function buildConfigEditorGroups(configObj) {
+    const renderedKeys = new Set();
+    const hatMode = String(configObj.hat_mode || '').toLowerCase() === 'joystick' ? 'joystick' : 'dpad';
+
+    const groups = [
+      {
+        title: 'Device',
+        fields: [
+          { type: 'key', key: 'device_name', label: getConfigEditorLabel('device_name') }
+        ]
+      },
+      {
+        title: 'Green Fret',
+        fields: [
+          { type: 'key', key: 'GREEN_FRET', label: 'Green Fret' },
+          { type: 'key', key: 'GREEN_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'GREEN_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'GREEN_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Red Fret',
+        fields: [
+          { type: 'key', key: 'RED_FRET', label: 'Red Fret' },
+          { type: 'key', key: 'RED_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'RED_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'RED_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Yellow Fret',
+        fields: [
+          { type: 'key', key: 'YELLOW_FRET', label: 'Yellow Fret' },
+          { type: 'key', key: 'YELLOW_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'YELLOW_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'YELLOW_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Blue Fret',
+        fields: [
+          { type: 'key', key: 'BLUE_FRET', label: 'Blue Fret' },
+          { type: 'key', key: 'BLUE_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'BLUE_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'BLUE_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Orange Fret',
+        fields: [
+          { type: 'key', key: 'ORANGE_FRET', label: 'Orange Fret' },
+          { type: 'key', key: 'ORANGE_FRET_led', label: 'Fret Index' },
+          { type: 'color', sourceKey: 'ORANGE_FRET', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'ORANGE_FRET', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Strum Up',
+        fields: [
+          { type: 'key', key: 'STRUM_UP', label: 'Strum Up' },
+          { type: 'key', key: 'STRUM_UP_led', label: 'LED Index' },
+          { type: 'color', sourceKey: 'STRUM_UP', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'STRUM_UP', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Strum Down',
+        fields: [
+          { type: 'key', key: 'STRUM_DOWN', label: 'Strum Down' },
+          { type: 'key', key: 'STRUM_DOWN_led', label: 'LED Index' },
+          { type: 'color', sourceKey: 'STRUM_DOWN', colorSet: 'led_color', label: 'Pressed' },
+          { type: 'color', sourceKey: 'STRUM_DOWN', colorSet: 'released_color', label: 'Released' }
+        ]
+      },
+      {
+        title: 'Whammy',
+        actions: [
+          {
+            label: 'Calibrate',
+            onClick: () => showWhammyModal()
+          }
+        ],
+        fields: [
+          { type: 'key', key: 'WHAMMY', label: getConfigEditorLabel('WHAMMY') },
+          { type: 'key', key: 'whammy_min', label: getConfigEditorLabel('whammy_min') },
+          { type: 'key', key: 'whammy_max', label: getConfigEditorLabel('whammy_max') },
+          { type: 'key', key: 'whammy_reverse', label: getConfigEditorLabel('whammy_reverse') }
+        ]
+      },
+      {
+        title: 'Controller Inputs',
+        fields: [
+          { type: 'key', key: 'SELECT', label: getConfigEditorLabel('SELECT') },
+          { type: 'key', key: 'START', label: getConfigEditorLabel('START') },
+          { type: 'key', key: 'GUIDE', label: getConfigEditorLabel('GUIDE') },
+          { type: 'key', key: 'TILT', label: getConfigEditorLabel('TILT') }
+        ]
+      },
+      {
+        title: 'Modes',
+        fields: [
+          { type: 'key', key: 'hat_mode', label: getConfigEditorLabel('hat_mode') },
+          { type: 'key', key: 'tilt_wave_enabled', label: getConfigEditorLabel('tilt_wave_enabled') }
+        ]
+      },
+      {
+        title: 'DPad',
+        visibility: 'dpad-only',
+        fields: [
+          { type: 'key', key: 'UP', label: getConfigEditorLabel('UP') },
+          { type: 'key', key: 'DOWN', label: getConfigEditorLabel('DOWN') },
+          { type: 'key', key: 'LEFT', label: getConfigEditorLabel('LEFT') },
+          { type: 'key', key: 'RIGHT', label: getConfigEditorLabel('RIGHT') }
+        ]
+      },
+      {
+        title: 'Joystick Pins',
+        visibility: 'joystick-only',
+        fields: [
+          { type: 'key', key: 'joystick_x_pin', label: getConfigEditorLabel('joystick_x_pin') },
+          { type: 'key', key: 'joystick_y_pin', label: getConfigEditorLabel('joystick_y_pin') }
+        ]
+      },
+      {
+        title: 'Pins',
+        fields: [
+          { type: 'key', key: 'neopixel_pin', label: getConfigEditorLabel('neopixel_pin') }
+        ]
+      }
+    ];
+
+    groups.forEach(group => {
+      group.fields.forEach(field => {
+        if (field.type === 'key') {
+          renderedKeys.add(field.key);
+        }
+      });
+    });
+
+    // Keep current mode handy for first render visibility.
+    groups.__hatMode = hatMode;
+
+    return groups;
+  }
+
+  function applyHatModeVisibility(modeValue) {
+    if (!configEditorFields) return;
+    const mode = String(modeValue || '').toLowerCase() === 'joystick' ? 'joystick' : 'dpad';
+    const allRows = configEditorFields.querySelectorAll('.config-editor-row');
+    allRows.forEach(row => {
+      const visibility = row.dataset.visibility || 'always';
+      if (visibility === 'dpad-only') {
+        row.style.display = mode === 'dpad' ? '' : 'none';
+      } else if (visibility === 'joystick-only') {
+        row.style.display = mode === 'joystick' ? '' : 'none';
+      } else {
+        row.style.display = '';
+      }
+    });
+  }
+
+  function renderConfigEditor(configObj) {
+    if (!configEditorFields) return;
+    configEditorFields.innerHTML = '';
+
+    const groups = buildConfigEditorGroups(configObj);
+
+    groups.forEach(group => {
+      const row = document.createElement('div');
+      row.className = 'config-editor-row';
+      row.dataset.visibility = group.visibility || 'always';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'config-editor-row-title';
+      const titleTextEl = document.createElement('span');
+      titleTextEl.textContent = group.title;
+      titleEl.appendChild(titleTextEl);
+
+      if (Array.isArray(group.actions) && group.actions.length) {
+        const actionsEl = document.createElement('div');
+        actionsEl.className = 'config-editor-row-actions';
+        group.actions.forEach(action => {
+          const actionBtn = document.createElement('button');
+          actionBtn.type = 'button';
+          actionBtn.className = 'config-editor-row-action';
+          actionBtn.textContent = action.label;
+          actionBtn.addEventListener('click', action.onClick);
+          actionsEl.appendChild(actionBtn);
+        });
+        titleEl.appendChild(actionsEl);
+      }
+
+      const fieldsWrap = document.createElement('div');
+      fieldsWrap.className = 'config-editor-row-fields';
+
+      group.fields.forEach(field => {
+        fieldsWrap.appendChild(createEditorField(field, configObj));
+      });
+
+      row.appendChild(titleEl);
+      row.appendChild(fieldsWrap);
+      configEditorFields.appendChild(row);
+    });
+
+    applyHatModeVisibility(groups.__hatMode || 'dpad');
+  }
+
+  function readConfigFromEditor() {
+    const nextConfig = configEditorSourceConfig ? cloneJsonObject(configEditorSourceConfig) : {};
+    const errors = [];
+
+    if (!configEditorFields) {
+      return { nextConfig, errors };
+    }
+
+    const allInputs = configEditorFields.querySelectorAll('.config-editor-value, .config-editor-bool-toggle');
+    allInputs.forEach(inputEl => {
+      try {
+        let parsedValue;
+        if (inputEl.classList.contains('config-editor-bool-toggle')) {
+          parsedValue = inputEl.dataset.booleanValue === 'true';
+        } else if (inputEl.classList.contains('config-editor-mode-toggle')) {
+          parsedValue = inputEl.dataset.modeValue === 'joystick' ? 'joystick' : 'dpad';
+        } else {
+          parsedValue = parseEditorValue(inputEl.value);
+        }
+        const fieldType = inputEl.dataset.fieldType;
+        if (fieldType === 'color') {
+          setConfigColorValue(nextConfig, inputEl.dataset.sourceKey, inputEl.dataset.colorSet, parsedValue);
+        } else {
+          if (inputEl.dataset.key === 'device_name') {
+            const deviceNameError = validateDeviceNameValue(parsedValue);
+            if (deviceNameError) {
+              throw new Error(deviceNameError);
+            }
+          }
+          nextConfig[inputEl.dataset.key] = parsedValue;
+        }
+      } catch (err) {
+        const keyName = inputEl.dataset.fieldLabel || inputEl.dataset.key || `${inputEl.dataset.sourceKey} ${inputEl.dataset.colorSet}`;
+        errors.push(`${keyName}: ${err.message}`);
+      }
+    });
+
+    return { nextConfig: normalizeConfigColorsToHex(nextConfig), errors };
+  }
+
+  function showConfigEditor(configObj) {
+    if (!mainPanel || !configEditorPage) return;
+    const normalizedConfig = normalizeConfigColorsToHex(configObj);
+    configEditorSourceConfig = cloneJsonObject(normalizedConfig);
+    renderConfigEditor(normalizedConfig);
+    mainPanel.classList.add('config-editor-active');
+    configEditorPage.style.display = 'flex';
+  }
+
+  function hideConfigEditor() {
+    if (!mainPanel || !configEditorPage) return;
+    mainPanel.classList.remove('config-editor-active');
+    configEditorPage.style.display = 'none';
+    syncMainButtonSetVisibility();
+  }
+
+  configEditorBtn?.addEventListener('click', () => {
+    closeConfigMenu();
+    const sourceConfig = originalConfig ? cloneJsonObject(originalConfig) : cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1);
+    showConfigEditor(sourceConfig);
+  });
+
+  configEditorBackBtn?.addEventListener('click', () => {
+    hideConfigEditor();
+  });
+
+  configEditorReloadBtn?.addEventListener('click', () => {
+    const sourceConfig = originalConfig ? cloneJsonObject(originalConfig) : cloneJsonObject(CONFIG_EDITOR_DEFAULT_V1);
+    showConfigEditor(sourceConfig);
+    showToast('Editor reloaded from current config', 'info');
+  });
+
+  configEditorAutoDefaultsBtn?.addEventListener('click', async () => {
+    const result = await applyDetectedHardwareDefaultsToSession('config-editor-defaults');
+    if (!result || !result.defaultsConfig) return;
+    showConfigEditor(cloneJsonObject(result.defaultsConfig));
+    showToast(`Loaded ${result.detectedVersion.toUpperCase()} defaults in editor`, 'info');
+  });
+
+  configEditorApplyBtn?.addEventListener('click', async () => {
+    const { nextConfig, errors } = readConfigFromEditor();
+
+    if (errors.length > 0) {
+      await customAlert(errors.join('\n'));
+      return;
+    }
+
+    originalConfig = cloneJsonObject(nextConfig);
+    window.originalConfig = cloneJsonObject(nextConfig);
+
+    if (typeof applyConfig === 'function') {
+      applyConfig(originalConfig);
+    }
+
+    configDirty = true;
+    const applyBtn = document.getElementById('apply-config-btn');
+    if (applyBtn) applyBtn.style.display = 'inline-block';
+
+    showToast('Config editor changes applied to session. Use Apply To Config to write device file.', 'success');
+    hideConfigEditor();
   });
 
   document.getElementById('presets-file-input')?.addEventListener('change', async (e) => {
@@ -4862,6 +6381,7 @@ if (window.multiDeviceManager) {
       const keys = buttonInputs.map(b => b.key);
       console.log('Starting pin status polling for keys:', keys);
       pinStatusInterval = setInterval(() => {
+        if (isHardwareDetectionActive()) return;
         keys.forEach(key => {
           console.log(`Sending READPIN:${key}`);
           connectedPort.write(`READPIN:${key}\n`);
@@ -5803,11 +7323,21 @@ if (window.multiDeviceManager) {
              connectedPort.writable && 
              !connectedPort.closed;
     }
+
+      function isForcePollingReady() {
+        return connectedPort && connectedPort.isOpen && !connectedPort.closed;
+      }
     
     // Define all polling start/stop functions
-    window.startDiagPinStatusPolling = function() {
+    window.startDiagPinStatusPolling = function(force = false) {
       const checkbox = document.getElementById('diag-input-enable');
-      if (!connectedPort || !checkbox || !checkbox.checked) return;
+      if (force) {
+        appendHardwareDetectTrace(`Pin poller start: force=true port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} readable=${connectedPort?.readable ? 'yes' : 'no'} writable=${connectedPort?.writable ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
+      }
+      if (!connectedPort || (!force && (!checkbox || !checkbox.checked))) {
+        if (force) appendHardwareDetectTrace('Pin poller start skipped: missing connectedPort or checkbox disabled');
+        return;
+      }
       stopDiagPinStatusPolling();
       
       const buttonInputsRow1 = [
@@ -5827,17 +7357,27 @@ if (window.multiDeviceManager) {
       
       const keys = [...buttonInputsRow1, ...buttonInputsRow2].map(b => b.key);
       let currentKeyIndex = 0;
+      let skippedTickCount = 0;
       
       // Round-robin polling: poll one button at a time to prevent serial buffer overflow
       diagPinStatusInterval = setInterval(() => {
-        if (document.getElementById('diag-input-enable')?.checked && isConnectionHealthy()) {
+        const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+        if ((force || document.getElementById('diag-input-enable')?.checked) && pollingAllowed) {
+          if (!force && isHardwareDetectionActive()) return;
           try {
             const key = keys[currentKeyIndex];
             connectedPort.write(`READPIN:${key}\n`);
+            if (force) appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
             currentKeyIndex = (currentKeyIndex + 1) % keys.length;
           } catch (err) {
             console.warn('[DIAG] Pin status polling write error:', err);
+            if (force) appendHardwareDetectTrace(`DIAG force pin write error: ${err.message || 'unknown error'}`);
             // Don't stop polling on individual write errors, just skip this cycle
+          }
+        } else if (force) {
+          skippedTickCount += 1;
+          if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+            appendHardwareDetectTrace(`Pin poller tick skipped: port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} readable=${connectedPort?.readable ? 'yes' : 'no'} writable=${connectedPort?.writable ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
           }
         }
       }, 20); // Faster individual polls but only one button at a time
@@ -5857,9 +7397,15 @@ if (window.multiDeviceManager) {
       }
     };
     
-    window.startDiagHatStatusPolling = function() {
+    window.startDiagHatStatusPolling = function(force = false) {
       const checkbox = document.getElementById('diag-hat-enable');
-      if (!connectedPort || !originalConfig || !checkbox || !checkbox.checked) return;
+      if (force) {
+        appendHardwareDetectTrace(`Hat poller start: force=true port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} hatMode=${originalConfig?.hat_mode || 'missing-config'}`);
+      }
+      if (!connectedPort || !originalConfig || (!force && (!checkbox || !checkbox.checked))) {
+        if (force) appendHardwareDetectTrace('Hat poller start skipped: missing connectedPort, missing originalConfig, or checkbox disabled');
+        return;
+      }
       stopDiagHatStatusPolling();
       
       const hatMode = originalConfig.hat_mode || 'joystick';
@@ -5868,26 +7414,46 @@ if (window.multiDeviceManager) {
         // Round-robin polling for DPAD buttons including GUIDE
         const dpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
         let currentDpadIndex = 0;
+        let skippedTickCount = 0;
         
         diagHatStatusInterval = setInterval(() => {
-          if (document.getElementById('diag-hat-enable')?.checked && isConnectionHealthy()) {
+          const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+          if ((force || document.getElementById('diag-hat-enable')?.checked) && pollingAllowed) {
+            if (!force && isHardwareDetectionActive()) return;
             try {
               const key = dpadKeys[currentDpadIndex];
               connectedPort.write(`READPIN:${key}\n`);
+              if (force) appendHardwareDetectTrace(`DIAG force TX: READPIN:${key}`);
               currentDpadIndex = (currentDpadIndex + 1) % dpadKeys.length;
             } catch (err) {
               console.warn('[DIAG] Hat status polling write error:', err);
+              if (force) appendHardwareDetectTrace(`DIAG force hat write error: ${err.message || 'unknown error'}`);
+            }
+          } else if (force) {
+            skippedTickCount += 1;
+            if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+              appendHardwareDetectTrace(`Hat poller tick skipped: mode=dpad port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
             }
           }
         }, 25); // Slower than individual pin polling since there are fewer buttons
       } else {
         // Poll joystick values - single command so no round-robin needed
+        let skippedTickCount = 0;
         diagHatStatusInterval = setInterval(() => {
-          if (document.getElementById('diag-hat-enable')?.checked && isConnectionHealthy()) {
+          const pollingAllowed = force ? isForcePollingReady() : isConnectionHealthy();
+          if ((force || document.getElementById('diag-hat-enable')?.checked) && pollingAllowed) {
+            if (!force && isHardwareDetectionActive()) return;
             try {
               connectedPort.write('READJOYSTICK\n');
+              if (force) appendHardwareDetectTrace('DIAG force TX: READJOYSTICK');
             } catch (err) {
               console.warn('[DIAG] Joystick polling write error:', err);
+              if (force) appendHardwareDetectTrace(`DIAG force joystick write error: ${err.message || 'unknown error'}`);
+            }
+          } else if (force) {
+            skippedTickCount += 1;
+            if (skippedTickCount <= 3 || skippedTickCount % 50 === 0) {
+              appendHardwareDetectTrace(`Hat poller tick skipped: mode=joystick port=${connectedPort?.path || 'none'} isOpen=${connectedPort?.isOpen ? 'yes' : 'no'} closed=${connectedPort?.closed ? 'yes' : 'no'}`);
             }
           }
         }, 30); // Slightly slower for joystick to reduce data flood
@@ -5915,6 +7481,7 @@ if (window.multiDeviceManager) {
       
       diagWhammyInterval = setInterval(() => {
         if (document.getElementById('diag-whammy-enable')?.checked && isConnectionHealthy()) {
+          if (isHardwareDetectionActive()) return;
           try {
             connectedPort.write('READWHAMMY\n');
           } catch (err) {
@@ -6144,23 +7711,19 @@ if (window.multiDeviceManager) {
       const str = data.toString().trim();
       
       // Validate and parse PIN data
-      const pinMatch = str.match(/PIN:([A-Z_]+):(\d+)/);
-      if (pinMatch) {
+      const validKeys = ['GREEN_FRET', 'RED_FRET', 'YELLOW_FRET', 'BLUE_FRET', 'ORANGE_FRET', 
+                        'STRUM_UP', 'STRUM_DOWN', 'START', 'SELECT', 'TILT'];
+      const parsed = parsePinReadResponse(str, validKeys);
+      if (parsed) {
+        if (isHardwareDetectionActive()) appendHardwareDetectTrace(`DIAG RX pin: ${parsed.key}=${parsed.val}`);
         // Hide buffer clearing popover when pin data arrives
         if (bufferClearingActive) {
           hideBufferClearingPopover();
         }
         
-        const key = pinMatch[1];
-        const val = pinMatch[2];
-        
-        // Validate the key is one we expect
-        const validKeys = ['GREEN_FRET', 'RED_FRET', 'YELLOW_FRET', 'BLUE_FRET', 'ORANGE_FRET', 
-                          'STRUM_UP', 'STRUM_DOWN', 'START', 'SELECT', 'TILT'];
-        if (validKeys.includes(key)) {
-          diagPinStatusMap[key] = val;
-          updateDiagInputBoxes();
-        }
+        diagPinStatusMap[parsed.key] = parsed.val;
+        window.__diagPinStatusMap = { ...diagPinStatusMap };
+        updateDiagInputBoxes();
       }
       
       // Also hide popover for PREVIEWLED confirmations (LED test commands)
@@ -6221,22 +7784,18 @@ if (window.multiDeviceManager) {
       const str = data.toString().trim();
       
       // Handle DPAD pin responses (PIN:UP:1, etc.) and GUIDE button
-      const pinMatch = str.match(/PIN:(UP|DOWN|LEFT|RIGHT|GUIDE):(\d+)/);
-      if (pinMatch) {
+      const validDpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
+      const parsed = parsePinReadResponse(str, validDpadKeys);
+      if (parsed) {
+        if (isHardwareDetectionActive()) appendHardwareDetectTrace(`DIAG RX hat: ${parsed.key}=${parsed.val}`);
         // Hide buffer clearing popover when hat pin data arrives
         if (bufferClearingActive) {
           hideBufferClearingPopover();
         }
         
-        const key = pinMatch[1];
-        const val = pinMatch[2];
-        
-        // Validate the key is a valid D-pad key
-        const validDpadKeys = ['UP', 'DOWN', 'LEFT', 'RIGHT', 'GUIDE'];
-        if (validDpadKeys.includes(key)) {
-          diagHatStatusMap[key] = val;
-          updateDiagHatStatus();
-        }
+        diagHatStatusMap[parsed.key] = parsed.val;
+        window.__diagHatStatusMap = { ...diagHatStatusMap };
+        updateDiagHatStatus();
         return;
       }
       
@@ -6492,6 +8051,7 @@ function updatePreview(elementId, hexColor) {
     el.style.color = text;
     liveColors.set(el, { bg, text });
   });
+  syncSelectedButtonColorsToConfig(selectedElements, hexColor);
   
   // Update hex input
   const hexInput = document.getElementById("hexInput");
@@ -6880,8 +8440,10 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log("✅ Created AutomaticFirmwareUpdater instance for button testing");
       }
       
-      // Retry in 1 second if dependencies aren't ready
-      setTimeout(initializeUpdaters, 1000);
+      // Retry in 1 second if dependencies aren't ready, but stay quiet during BOOTSEL flashing.
+      if (!bootselPrompted && !isFlashingFirmware) {
+        setTimeout(initializeUpdaters, 1000);
+      }
     }
   };
   

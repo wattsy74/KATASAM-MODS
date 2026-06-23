@@ -14,7 +14,116 @@ let updateDeviceSelector = () => {};
 let requestNextFile = () => {};
 let showToast = () => {};
 
+function isLikelyValidDeviceName(name) {
+  if (typeof name !== 'string') return false;
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 50) return false;
+  if (trimmed.includes('\\n') || trimmed.includes('\\r') || trimmed.includes(':')) return false;
+  if (trimmed.includes('.json') || trimmed.includes('.py')) return false;
+  if (/^(ACK|ERROR|END|READDEVICENAME|READUID|READVERSION|DETECTPIN|PINDETECT|FIRMWARE_READY|UNKNOWN)/i.test(trimmed)) return false;
+  return true;
+}
+
 class MultiDeviceManager {
+  colorValueToHex(color) {
+    if (Array.isArray(color) && color.length >= 3) {
+      const channels = color.slice(0, 3).map(value => Number(value));
+      if (channels.every(value => Number.isFinite(value))) {
+        return '#' + channels
+          .map(value => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase();
+      }
+    }
+
+    if (typeof color === 'string') {
+      const trimmed = color.trim();
+      if (/^[0-9a-fA-F]{6}$/.test(trimmed)) return `#${trimmed.toUpperCase()}`;
+      if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed.toUpperCase();
+      if (/^#[0-9a-fA-F]{3}$/.test(trimmed)) {
+        return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`.toUpperCase();
+      }
+      const rgbMatch = trimmed.match(/^rgb\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+      if (rgbMatch) {
+        return '#' + rgbMatch.slice(1, 4)
+          .map(value => Math.max(0, Math.min(255, Number(value))).toString(16).padStart(2, '0'))
+          .join('')
+          .toUpperCase();
+      }
+    }
+
+    return color;
+  }
+
+  normalizeConfigColorsToHex(config) {
+    if (!config || typeof config !== 'object') return { config, changed: false };
+    const nextConfig = JSON.parse(JSON.stringify(config));
+    let changed = false;
+
+    ['led_color', 'released_color'].forEach(key => {
+      if (!Array.isArray(nextConfig[key])) return;
+      nextConfig[key] = nextConfig[key].map((color, index) => {
+        const hex = this.colorValueToHex(color);
+        if (JSON.stringify(hex) !== JSON.stringify(color)) {
+          changed = true;
+          console.log(`[MultiDeviceManager] Normalized ${key}[${index}] from`, color, 'to', hex);
+        }
+        return hex;
+      });
+    });
+
+    return { config: nextConfig, changed };
+  }
+
+  async rewriteConfigIfColorsNormalized(device, config, changed) {
+    if (!changed || !device || !device.port || !device.port.isOpen) return;
+    try {
+      console.log('[MultiDeviceManager] RGB tuple colours detected; rewriting config.json with HEX colours');
+      if (typeof this.markConfigWrite === 'function') {
+        this.markConfigWrite();
+      }
+      await writeFile(device.port, 'config.json', JSON.stringify(config), 12000);
+      console.log('[MultiDeviceManager] config.json rewritten with HEX colours');
+    } catch (err) {
+      console.warn('[MultiDeviceManager] Failed to rewrite config.json with HEX colours:', err.message);
+    }
+  }
+
+  parseJsonLenient(raw, fileName = 'unknown') {
+    if (typeof raw !== 'string') return raw;
+
+    try {
+      return JSON.parse(raw);
+    } catch (_directErr) {
+      // Serial responses can occasionally contain protocol noise before/after JSON.
+      // Try object/array slicing as a fallback before giving up.
+      const objectStart = raw.indexOf('{');
+      const objectEnd = raw.lastIndexOf('}');
+      if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+        const objectSlice = raw.slice(objectStart, objectEnd + 1);
+        try {
+          return JSON.parse(objectSlice);
+        } catch (_objectErr) {
+          // Continue to array fallback.
+        }
+      }
+
+      const arrayStart = raw.indexOf('[');
+      const arrayEnd = raw.lastIndexOf(']');
+      if (arrayStart !== -1 && arrayEnd !== -1 && arrayEnd > arrayStart) {
+        const arraySlice = raw.slice(arrayStart, arrayEnd + 1);
+        try {
+          return JSON.parse(arraySlice);
+        } catch (_arrayErr) {
+          // Fall through to warning below.
+        }
+      }
+
+      console.warn(`[MultiDeviceManager] ${fileName} lenient JSON parsing failed; returning raw string`);
+      return raw;
+    }
+  }
+
   /**
    * Reads all device files sequentially: config.json, presets.json, user_presets.json.
    * Returns { config, presets, userPresets } (parsed if possible).
@@ -58,12 +167,21 @@ class MultiDeviceManager {
             console.log(`[MultiDeviceManager] ${name} read success - length: ${raw.length} chars`);
             let parsed = raw;
             try {
-              parsed = JSON.parse(raw);
-              console.log(`[MultiDeviceManager] ${name} JSON parsing: SUCCESS`);
+              parsed = this.parseJsonLenient(raw, name);
+              if (parsed && typeof parsed === 'object') {
+                console.log(`[MultiDeviceManager] ${name} JSON parsing: SUCCESS`);
+              } else {
+                console.warn(`[MultiDeviceManager] ${name} JSON parsing: RAW_FALLBACK`);
+              }
             } catch (e) {
               console.warn(`[MultiDeviceManager] ${name} JSON parsing: FAILED - ${e.message}`);
               console.warn(`[MultiDeviceManager] ${name} Raw content that failed parsing:`, raw);
               // If not JSON, keep as string
+            }
+            if (key === 'config' && parsed && typeof parsed === 'object') {
+              const normalized = this.normalizeConfigColorsToHex(parsed);
+              parsed = normalized.config;
+              await this.rewriteConfigIfColorsNormalized(device, parsed, normalized.changed);
             }
             results[key] = parsed;
             break;
@@ -102,6 +220,42 @@ class MultiDeviceManager {
     
     // Always reload config, presets, and user presets from the device and update the UI
     await this.setActiveDevice(device, true);
+  }
+  async reloadConfigForUiOnly(device) {
+    if (!device || !device.port || !device.port.isOpen || this._configUiReloadInProgress) return;
+    this._configUiReloadInProgress = true;
+    try {
+      console.log('[MultiDeviceManager] Read-only config reload for UI:', device.id);
+      await this.flushSerialBuffer(device.port);
+      const rawConfig = await readFile(device.port, 'config.json', 12000);
+      const parsedConfig = this.parseJsonLenient(rawConfig, 'config.json');
+      const normalized = this.normalizeConfigColorsToHex(parsedConfig);
+      const config = normalized.config;
+      if (!config || typeof config !== 'object' || !Array.isArray(config.led_color) || !Array.isArray(config.released_color)) {
+        console.warn('[MultiDeviceManager] Read-only UI config reload did not produce valid color arrays:', config);
+        return;
+      }
+      await this.rewriteConfigIfColorsNormalized(device, config, normalized.changed);
+      device.config = config;
+      if (typeof window !== 'undefined') {
+        if (typeof window.applyConfig === 'function') {
+          window.applyConfig(config);
+        }
+        if (typeof window.updateActiveButtonText === 'function') {
+          window.updateActiveButtonText(device);
+        }
+      }
+      if (typeof this.emit === 'function') {
+        this.emit('deviceFilesLoaded', device, { config, presets: device.presets, userPresets: device.userPresets });
+      }
+      if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('deviceFilesLoaded', { detail: { device, config, presets: device.presets, userPresets: device.userPresets } }));
+      }
+    } catch (err) {
+      console.warn('[MultiDeviceManager] Read-only UI config reload failed:', err.message);
+    } finally {
+      this._configUiReloadInProgress = false;
+    }
   }
   /**
    * Returns the base label for a button, stripping any state suffix.
@@ -220,6 +374,14 @@ class MultiDeviceManager {
     let ledName = this.getReleasedLedName(buttonOrIndex);
     // Always send HEX with leading #
     let color = colorValue;
+    if (Array.isArray(color) && color.length >= 3) {
+      const channels = color.slice(0, 3).map((value) => Number(value));
+      if (channels.every((value) => Number.isFinite(value))) {
+        color = '#' + channels
+          .map((value) => Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0'))
+          .join('');
+      }
+    }
     if (typeof color === 'string') {
       // Convert rgb() to HEX if needed
       if (color.startsWith('rgb')) {
@@ -233,6 +395,9 @@ class MultiDeviceManager {
       } else if (!color.startsWith('#')) {
         color = '#' + color;
       }
+    } else {
+      console.warn('[MultiDeviceManager] Invalid preview color value:', colorValue);
+      return;
     }
     const device = this.getActiveDevice();
     
@@ -292,14 +457,26 @@ class MultiDeviceManager {
   getConnectedDevices() {
     return Array.from(this.connectedDevices.values());
   }
+  hasLoadedConfigColors(device) {
+    return !!(
+      device &&
+      device.config &&
+      Array.isArray(device.config.led_color) &&
+      Array.isArray(device.config.released_color) &&
+      device.config.led_color.length >= 7 &&
+      device.config.released_color.length >= 7
+    );
+  }
   async setActiveDevice(device, force = false) {
     // Always update this.activeDevice and re-validate port, even if duplicate file read is prevented
     let skipFileRead = false;
     if (!force && this._activeDeviceFileRead && device && device.port && device.id === this._activeDeviceFileRead) {
       // Check if the port is still open and valid
-      if (device.port.isOpen) {
+      if (device.port.isOpen && this.hasLoadedConfigColors(device)) {
         console.log('[MultiDeviceManager] setActiveDevice: Duplicate file read prevented for device', device.id);
         skipFileRead = true;
+      } else if (device.port.isOpen) {
+        console.log('[MultiDeviceManager] setActiveDevice: Device active but config colors are missing, reading files again', device.id);
       } else {
         console.warn('[MultiDeviceManager] setActiveDevice: Port was closed, reloading device', device.id);
       }
@@ -688,13 +865,22 @@ class MultiDeviceManager {
           
           // Find device name (skip ACK, UID-like responses, and firmware ready messages)
           for (const line of lines) {
+            if (line.startsWith('DEVICENAME:') || line.startsWith('DEVICE_NAME:')) {
+              const explicitName = line.split(':').slice(1).join(':').trim();
+              if (isLikelyValidDeviceName(explicitName)) {
+                resolve(explicitName);
+                return;
+              }
+              continue;
+            }
+
             if (line === 'END' || 
                 line.startsWith('ACK:') || 
                 line.startsWith('FIRMWARE_READY:') || 
                 /^[0-9A-F]{16}$/i.test(line)) {
               continue;
             }
-            if (line && line !== 'Unknown') {
+            if (isLikelyValidDeviceName(line)) {
               resolve(line);
               return;
             }
@@ -791,6 +977,11 @@ class MultiDeviceManager {
       // On macOS, many devices expose both /dev/tty.usb* and /dev/cu.usb* interfaces.
       // Prefer /dev/cu.* for app communication and suppress the matching /dev/tty.* duplicate.
       const portPaths = new Set(ports.map((p) => p.path));
+      const getMacUsbStem = (portPath) => {
+        const match = String(portPath || '').toLowerCase().match(/^\/dev\/(?:tty|cu)\.(usb(?:modem|serial)[^\/]*)$/);
+        if (!match) return null;
+        return match[1].replace(/\d+$/, '');
+      };
 
       // Detailed logging for each port
       ports.forEach((port, idx) => {
@@ -824,9 +1015,29 @@ class MultiDeviceManager {
           friendlyLower.includes('circuitpython') ||
           friendlyLower.includes('usb serial');
         const hasUsbIdentity = Boolean(vendorLower && productLower);
-        const hasMatchingCuInterface =
-          pathLower.startsWith('/dev/tty.usb') &&
+        const macTtyUsbPath = pathLower.startsWith('/dev/tty.usb');
+        const hasMatchingCuByExactPath =
+          macTtyUsbPath &&
           portPaths.has(port.path.replace('/dev/tty.', '/dev/cu.'));
+        const normalizedSerialLower = String(port.serialNumber || '').trim().toLowerCase();
+        const hasMatchingCuBySerial =
+          macTtyUsbPath &&
+          normalizedSerialLower &&
+          ports.some((otherPort) => {
+            const otherPath = String(otherPort.path || '').toLowerCase();
+            const otherSerial = String(otherPort.serialNumber || '').trim().toLowerCase();
+            return otherPath.startsWith('/dev/cu.usb') && otherSerial === normalizedSerialLower;
+          });
+        const stem = getMacUsbStem(port.path);
+        const hasMatchingCuByStem =
+          macTtyUsbPath &&
+          stem &&
+          ports.some((otherPort) => {
+            const otherPath = String(otherPort.path || '').toLowerCase();
+            if (!otherPath.startsWith('/dev/cu.usb')) return false;
+            return getMacUsbStem(otherPort.path) === stem;
+          });
+        const hasMatchingCuInterface = hasMatchingCuByExactPath || hasMatchingCuBySerial || hasMatchingCuByStem;
 
         const isCandidate = hasWindowsInterfaceMarker || hasKnownTextMarker || hasUsbPathMarker;
         const includeThisPort = isCandidate && !hasMatchingCuInterface;
@@ -844,6 +1055,115 @@ class MultiDeviceManager {
 
         return includeThisPort;
       });
+
+      // On Windows, one physical device can expose multiple interfaces (e.g. MI_00 and MI_02).
+      // Keep only the highest interface number per physical PNP base so the picker shows one port.
+      const getWindowsPnpBase = (pnpId) => String(pnpId || '').replace(/&mi_[0-9a-f]{2}/i, '').toLowerCase();
+      const getWindowsInterfaceNumber = (pnpId) => {
+        const match = String(pnpId || '').match(/&mi_([0-9a-f]{2})/i);
+        if (!match) return -1;
+        return parseInt(match[1], 16);
+      };
+
+      const windowsInterfaceGroups = new Map();
+      for (const port of guitarDevices) {
+        const pnpId = String(port.pnpId || '');
+        if (!pnpId) continue;
+        const base = getWindowsPnpBase(pnpId);
+        if (!base) continue;
+        if (!windowsInterfaceGroups.has(base)) {
+          windowsInterfaceGroups.set(base, []);
+        }
+        windowsInterfaceGroups.get(base).push(port);
+      }
+
+      const selectedWindowsInterfacePaths = new Set();
+      for (const [base, groupedPorts] of windowsInterfaceGroups.entries()) {
+        if (groupedPorts.length === 1) {
+          selectedWindowsInterfacePaths.add(groupedPorts[0].path);
+          continue;
+        }
+
+        const selectedPort = groupedPorts
+          .slice()
+          .sort((a, b) => {
+            const interfaceDiff = getWindowsInterfaceNumber(b.pnpId) - getWindowsInterfaceNumber(a.pnpId);
+            if (interfaceDiff !== 0) return interfaceDiff;
+            return String(b.path || '').localeCompare(String(a.path || ''));
+          })[0];
+
+        selectedWindowsInterfacePaths.add(selectedPort.path);
+        console.log(
+          `[MultiDeviceManager] Multiple Windows interfaces for ${base} detected (${groupedPorts
+            .map((p) => `${p.path} [${p.pnpId || 'no-pnpId'}]`)
+            .join(', ')}). Keeping highest interface: ${selectedPort.path}`
+        );
+      }
+
+      guitarDevices = guitarDevices.filter((port) => {
+        const pnpId = String(port.pnpId || '');
+        if (!pnpId) return true;
+        const base = getWindowsPnpBase(pnpId);
+        if (!base) return true;
+        return selectedWindowsInterfacePaths.has(port.path);
+      });
+
+      // Prefer one interface per physical USB serial device on macOS.
+      // If both cu/tty exist, prefer cu; if only tty exists, keep the highest numeric tty path.
+      const getPathRank = (portPath) => {
+        const p = String(portPath || '').toLowerCase();
+        if (p.startsWith('/dev/cu.usb')) return 3;
+        if (p.startsWith('/dev/tty.usb')) return 2;
+        return 1;
+      };
+      const getPathSuffixNumber = (portPath) => {
+        const match = String(portPath || '').match(/(\d+)$/);
+        return match ? parseInt(match[1], 10) : -1;
+      };
+      const getPhysicalGroupKey = (port) => {
+        const serial = String(port.serialNumber || '').trim();
+        const location = String(port.locationId || '').trim();
+        const vendor = String(port.vendorId || '').trim();
+        const product = String(port.productId || '').trim();
+        if (serial) return `serial:${serial}`;
+        if (location) return `location:${location}`;
+        if (vendor && product) return `usb:${vendor}:${product}`;
+        return `path:${String(port.path || '').replace(/^\/dev\/(?:tty|cu)\./, '')}`;
+      };
+
+      const interfaceGroups = new Map();
+      for (const port of guitarDevices) {
+        const key = getPhysicalGroupKey(port);
+        if (!interfaceGroups.has(key)) interfaceGroups.set(key, []);
+        interfaceGroups.get(key).push(port);
+      }
+
+      const selectedInterfacePaths = new Set();
+      for (const [key, groupedPorts] of interfaceGroups.entries()) {
+        if (groupedPorts.length === 1) {
+          selectedInterfacePaths.add(groupedPorts[0].path);
+          continue;
+        }
+
+        const selectedPort = groupedPorts
+          .slice()
+          .sort((a, b) => {
+            const rankDiff = getPathRank(b.path) - getPathRank(a.path);
+            if (rankDiff !== 0) return rankDiff;
+            const suffixDiff = getPathSuffixNumber(b.path) - getPathSuffixNumber(a.path);
+            if (suffixDiff !== 0) return suffixDiff;
+            return String(b.path || '').localeCompare(String(a.path || ''));
+          })[0];
+
+        selectedInterfacePaths.add(selectedPort.path);
+        console.log(
+          `[MultiDeviceManager] Multiple interfaces for ${key} detected (${groupedPorts
+            .map((p) => p.path)
+            .join(', ')}). Keeping: ${selectedPort.path}`
+        );
+      }
+
+      guitarDevices = guitarDevices.filter((port) => selectedInterfacePaths.has(port.path));
 
       const getInterfaceNumber = (portPath) => {
         const match = String(portPath || '').match(/(\d+)$/);
@@ -1039,8 +1359,13 @@ class MultiDeviceManager {
               console.log('[MultiDeviceManager] Setting active device during scan (device changed):', stillActive.id);
               this.setActiveDevice(stillActive);
             } else {
-              // Device is the same, just update the devices map without triggering events
-              console.log('[MultiDeviceManager] Active device unchanged during scan:', stillActive.id);
+              if (!this.hasLoadedConfigColors(stillActive)) {
+                console.log('[MultiDeviceManager] Active device unchanged but config colors are missing:', stillActive.id);
+                this.reloadConfigForUiOnly(stillActive);
+              } else {
+                // Device is the same, just update the devices map without triggering events
+                console.log('[MultiDeviceManager] Active device unchanged during scan:', stillActive.id);
+              }
             }
           } else {
             // Connected device has invalid port state, remove it and attempt reconnection

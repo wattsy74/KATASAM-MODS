@@ -187,6 +187,17 @@ html, body {
   padding: 10px;
 }
 
+.main.config-editor-active {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.main.config-editor-active .left-panel,
+.main.config-editor-active .picker-panel {
+  display: none;
+}
+
 .left-panel {
   flex: 2;
   display: flex;
@@ -207,6 +218,247 @@ html, body {
   border: 1px solid #30343A;
   border-radius: 10px;
   padding: 10px;
+}
+
+.config-editor-page {
+  height: 100%;
+  min-height: 0;
+  display: none;
+  flex-direction: column;
+  background: #1B1C1F;
+  border: 1px solid #30343A;
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.main.config-editor-active .config-editor-page {
+  display: flex;
+}
+
+.config-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.config-editor-header h3 {
+  margin: 0;
+  color: #28D0AF;
+}
+
+.config-editor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.config-editor-help {
+  margin: 0 0 10px 0;
+  color: #cccccc;
+  font-size: 13px;
+}
+
+.config-editor-fields {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid #30343A;
+  border-radius: 8px;
+  background: #151619;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.config-editor-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #2a2d33;
+  border-radius: 8px;
+  background: #1d2026;
+}
+
+.config-editor-row-title {
+  color: #28D0AF;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding-top: 6px;
+}
+
+.config-editor-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.config-editor-row-action {
+  min-height: 30px;
+  border-radius: 6px;
+  border: 1px solid #28D0AF;
+  background: #19352f;
+  color: #f2f2f2;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.config-editor-row-action:hover,
+.config-editor-row-action:focus {
+  outline: none;
+  background: #21483f;
+}
+
+.config-editor-row-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.config-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-editor-input-wrap {
+  display: grid;
+  grid-template-columns: 1fr 22px;
+  gap: 8px;
+  align-items: center;
+}
+
+.config-editor-input-wrap.no-swatch {
+  grid-template-columns: 1fr 22px;
+}
+
+.config-editor-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  border: 1px solid #5d6875;
+  display: none;
+}
+
+.config-editor-color-swatch[data-pickable="true"] {
+  cursor: pointer;
+}
+
+.config-editor-hidden-color-picker {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.config-editor-bool-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  cursor: pointer;
+  text-align: left;
+  padding: 8px;
+}
+
+.config-editor-mode-toggle {
+  width: 100%;
+  min-height: 34px;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  cursor: pointer;
+  text-align: left;
+  padding: 8px;
+}
+
+.config-editor-bool-toggle.is-true {
+  border-color: #28D0AF;
+  background: #19352f;
+}
+
+.config-editor-bool-toggle.is-false {
+  border-color: #5f6b79;
+  background: #2a2f36;
+}
+
+.config-editor-mode-toggle.is-dpad {
+  border-color: #28D0AF;
+  background: #19352f;
+}
+
+.config-editor-mode-toggle.is-joystick {
+  border-color: #f0c247;
+  background: #3a3018;
+}
+
+.config-editor-bool-toggle:focus {
+  outline: none;
+  border-color: #28D0AF;
+}
+
+.config-editor-mode-toggle:focus {
+  outline: none;
+  border-color: #28D0AF;
+}
+
+.config-editor-key {
+  color: #d6d6d6;
+  font-weight: 600;
+  padding-top: 0;
+  word-break: break-word;
+  font-size: 12px;
+}
+
+.config-editor-value {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid #46505a;
+  background: #20242a;
+  color: #f2f2f2;
+  padding: 8px;
+  font-size: 13px;
+  font-family: 'Consolas', 'Menlo', monospace;
+  resize: vertical;
+  min-height: 34px;
+}
+
+.config-editor-value:focus {
+  outline: none;
+  border-color: #28D0AF;
+}
+
+@media (max-width: 1100px) {
+  .config-editor-row-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .config-editor-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .config-editor-row-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .picker-area {
@@ -551,7 +803,7 @@ select option:disabled {
   font-family: 'Segoe UI', sans-serif;
   font-weight: bold;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
   display: none; /* Hidden by default */
   min-width: 200px;
   text-align: center;
@@ -559,8 +811,15 @@ select option:disabled {
   height: 38px;
 }
 
-#apply-config-btn:hover {
-  background-color: #e6b800;
+#apply-config-btn:hover,
+#apply-config-btn:focus {
+  background-color: #5DE3CB;
+  color: #222;
+  box-shadow: 0 0 0 2px rgba(93, 227, 203, 0.35);
+}
+
+#apply-config-btn:focus {
+  outline: none;
 }
 .config-menu-wrapper {
   position: relative; /* Keeps the icon aligned inside header */
@@ -789,7 +1048,7 @@ select option:disabled {
   background-color: #e6b800;
 }
 
-/* Modal button styling for consistent yellow theme */
+/* Modal button styling for consistent KATASAM theme */
 .modal-btn {
   background-color: #28D0AF;
   color: #000;
@@ -804,7 +1063,7 @@ select option:disabled {
 }
 
 .modal-btn:hover {
-  background-color: #e6b800;
+  background-color: #22b89b;
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }

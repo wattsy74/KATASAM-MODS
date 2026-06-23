@@ -1,0 +1,7 @@
+# macOS Finder metadata
+.DS_Store
+.DS_Store?
+**/.DS_Store
+
+# Local debug scratch files
+console-paste
