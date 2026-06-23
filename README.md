@@ -5,6 +5,8 @@ This repository now contains the rebranded KATASAM desktop applications migrated
 - `wattsy74/BumbleGum-Guitars-Configurator`
 - `wattsy74/BumbleGum-Firmware-Switcher`
 
+Current stable release: `v5.0.0`
+
 ## Repository Layout
 
 ```
@@ -50,3 +52,8 @@ npm start
 - User-facing BumbleGum branding has been rebranded to KATASAM across both apps.
 - Firmware download URLs currently point to the existing firmware release source repo so flashing continues to work during migration.
 - Configurator auto-update target is set to `wattsy74/KATASAM-MODS`.
+
+## Known Issues
+
+- Configurator device detection can be incorrect immediately after firmware
+  flashing on some systems (tracked as FEAT-003).
