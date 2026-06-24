@@ -34,9 +34,14 @@ async function copyFileWithRetries(src, dest, attempts = 8, delayMs = 300) {
     // Helper to check destination directory exists and is writable
     function destWritable(destPath) {
         try {
-            const root = path.parse(destPath).root; // e.g., 'D:\'
-            // Check that root exists and is writable
-            fs.accessSync(root, fs.constants.W_OK);
+            const destDir = path.dirname(destPath);
+            // Check that destination directory exists and is writable.
+            // On macOS/Linux BOOTSEL paths are mounted under /Volumes/... and
+            // checking filesystem root (/) gives false negatives.
+            if (!fs.existsSync(destDir)) {
+                return false;
+            }
+            fs.accessSync(destDir, fs.constants.W_OK);
             return true;
         } catch (e) {
             return false;
@@ -118,16 +123,17 @@ async function waitForBootselMount(bootselPath, timeoutMs = 20000) {
             }
 
             // List entries for diagnostics
+            let foundMarker = false;
             try {
                 const entries = fs.readdirSync(bootselPath);
                 console.log('[MOUNT] Directory entries at', bootselPath, ':', entries.join(', '));
                 logSerial('[MOUNT] Directory entries at ' + bootselPath + ': ' + entries.join(', '));
-                // If any marker files present consider it mounted
                 for (const m of markers) {
                     if (entries.includes(m)) {
                         console.log('[MOUNT] Found marker file:', m);
                         logSerial('[MOUNT] Found marker file: ' + m);
-                        return true;
+                        foundMarker = true;
+                        break;
                     }
                 }
             } catch (e) {
@@ -135,14 +141,19 @@ async function waitForBootselMount(bootselPath, timeoutMs = 20000) {
                 logSerial('[MOUNT] Could not list directory yet: ' + e.message);
             }
 
-            // Check writability
+            // Always require writability before declaring ready — marker files only
+            // prove the volume is readable, not that new files can be written.
             try {
                 fs.accessSync(bootselPath, fs.constants.W_OK);
                 console.log('[MOUNT] Destination root writable:', bootselPath);
                 logSerial('[MOUNT] Destination root writable: ' + bootselPath);
                 return true;
             } catch (e) {
-                // Not writable yet
+                if (foundMarker) {
+                    console.log('[MOUNT] Marker found but not writable yet, waiting...');
+                    logSerial('[MOUNT] Marker found but not writable yet, waiting...');
+                }
+                // Not writable yet — keep polling
             }
 
             await sleep(300);
@@ -184,8 +195,13 @@ function readCachedHardwareVersion() {
             return null;
         }
 
+        const normalizedVersion = normalizeHardwareVersion(parsed.version);
+        if (!normalizedVersion) {
+            return null;
+        }
+
         return {
-            version: normalizeHardwareVersion(parsed.version),
+            version: normalizedVersion,
             source: parsed.source || 'cache',
             updatedAt: parsed.updatedAt || null
         };
@@ -197,6 +213,11 @@ function readCachedHardwareVersion() {
 
 function writeCachedHardwareVersion(version, source) {
     const normalized = normalizeHardwareVersion(version);
+    if (!normalized) {
+        console.warn('[VERSION] Refusing to cache invalid hardware version:', version);
+        return null;
+    }
+
     try {
         const payload = {
             version: normalized,
@@ -217,9 +238,12 @@ function readHardwareVersionFromBootselOrCache(bootselPath) {
 
     if (fs.existsSync(versionFile)) {
         const fileVersion = normalizeHardwareVersion(fs.readFileSync(versionFile, 'utf-8').trim());
-        writeCachedHardwareVersion(fileVersion, 'bootsel-file');
-        console.log('[VERSION] ✓ Found hardware version in BOOTSEL file:', fileVersion);
-        return { success: true, version: fileVersion, source: 'bootsel-file' };
+        if (fileVersion) {
+            writeCachedHardwareVersion(fileVersion, 'bootsel-file');
+            console.log('[VERSION] ✓ Found hardware version in BOOTSEL file:', fileVersion);
+            return { success: true, version: fileVersion, source: 'bootsel-file' };
+        }
+        console.log('[VERSION] hardware_version.txt found but contained invalid value; falling back to cache');
     }
 
     const cached = readCachedHardwareVersion();
@@ -263,18 +287,20 @@ function parseHardwareVersionFromText(text) {
 // Firmware URLs - v1 (pin 23) vs v2 (pin 13) hardware variants
 const FIRMWARE_URLS = {
     // Classic firmware variants
-    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v1.uf2',
-    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v2.uf2',
+    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v1.uf2',
+    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v2.uf2',
     
     // Santroller firmware variants
-    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv1.uf2',
-    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv2.uf2'
+    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv1.uf2',
+    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv2.uf2'
 };
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 700,
+        width: 980,
+        height: 860,
+        minWidth: 900,
+        minHeight: 820,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -838,7 +864,7 @@ ipcMain.handle('start-flash-with-version-detection', async (event, targetFirmwar
                         }
 
                         // Use retrying copy helper for robustness
-                        await copyFileWithRetries(firmwarePath, destPath, 3, 500);
+                        await copyFileWithRetries(firmwarePath, destPath, 10, 500);
                         
                         const destStats = fs.statSync(destPath);
                         console.log(`[COPY] Copied ${destStats.size} bytes`);

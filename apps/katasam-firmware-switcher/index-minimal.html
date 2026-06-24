@@ -105,6 +105,22 @@
             display: block;
         }
 
+        .action-hint {
+            display: none;
+            background: #1a1a1a;
+            border: 1px solid rgba(40, 208, 175, 0.25);
+            border-radius: 12px;
+            padding: 14px;
+            color: #b7d8d1;
+            font-size: 13px;
+            line-height: 1.45;
+            text-align: left;
+        }
+
+        .action-hint.visible {
+            display: block;
+        }
+
         .action-btn:hover:not(:disabled) {
             background: #23b89b;
             transform: translateY(-2px);
@@ -176,6 +192,7 @@
             <button class="action-btn" id="switchToSantroller">
                 Switch to Santroller
             </button>
+            <div class="action-hint" id="versionRequiredNotice"></div>
         </div>
 
         <div class="progress" id="progress">

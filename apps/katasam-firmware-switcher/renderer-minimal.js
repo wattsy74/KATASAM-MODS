@@ -1,8 +1,8 @@
 const FIRMWARE_URLS = {
-    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v1.uf2',
-    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v2.uf2',
-    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv1.uf2',
-    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv2.uf2'
+    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v1.uf2',
+    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v2.uf2',
+    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv1.uf2',
+    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv2.uf2'
 };
 
 let currentDevice = null;
@@ -18,6 +18,7 @@ const currentFW = document.getElementById('currentFW');
 const hwVersion = document.getElementById('hwVersion');
 const switchToClassicBtn = document.getElementById('switchToClassic');
 const switchToSantrollerBtn = document.getElementById('switchToSantroller');
+const versionRequiredNotice = document.getElementById('versionRequiredNotice');
 const progress = document.getElementById('progress');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
@@ -38,8 +39,12 @@ async function detectDevice() {
             
             // Try to read hardware version from flag file
             const versionResult = await window.electronAPI.readHardwareVersion(bootsel.path);
-            if (versionResult.success) {
-                hardwareVersion = versionResult.version;
+            const parsedVersion = (versionResult && versionResult.success && (versionResult.version === 'v1' || versionResult.version === 'v2'))
+                ? versionResult.version
+                : 'unknown';
+
+            if (parsedVersion !== 'unknown') {
+                hardwareVersion = parsedVersion;
                 lastKnownHardwareVersion = hardwareVersion;
                 console.log('[DETECT] ✓ Hardware version from flag file:', hardwareVersion);
             } else {
@@ -202,11 +207,30 @@ async function detectDevice() {
 }
 
 function updateButtons(deviceType) {
+    const hasKnownHardwareVersion =
+        hardwareVersion === 'v1' ||
+        hardwareVersion === 'v2' ||
+        lastKnownHardwareVersion === 'v1' ||
+        lastKnownHardwareVersion === 'v2';
+
+    const showVersionRequiredNotice = () => {
+        if (!versionRequiredNotice) return;
+        versionRequiredNotice.textContent = 'Hardware version could not be detected. Use KATASAM Configurator to install firmware and detect hardware version before switching to Santroller.';
+        versionRequiredNotice.classList.add('visible');
+    };
+
+    const hideVersionRequiredNotice = () => {
+        if (!versionRequiredNotice) return;
+        versionRequiredNotice.classList.remove('visible');
+        versionRequiredNotice.textContent = '';
+    };
+
     // Hide all buttons by default
     switchToClassicBtn.classList.remove('visible');
     switchToSantrollerBtn.classList.remove('visible');
     switchToClassicBtn.disabled = false;
     switchToSantrollerBtn.disabled = false;
+    hideVersionRequiredNotice();
     
     if (!deviceType) {
         // No device connected - disable all
@@ -214,15 +238,23 @@ function updateButtons(deviceType) {
     }
     
     if (deviceType === 'classic') {
-        // Classic firmware - show "Switch to Santroller" button only
-        switchToSantrollerBtn.classList.add('visible');
+        // Classic firmware - require known hardware version before allowing Santroller switch
+        if (hasKnownHardwareVersion) {
+            switchToSantrollerBtn.classList.add('visible');
+        } else {
+            showVersionRequiredNotice();
+        }
     } else if (deviceType === 'santroller') {
         // Santroller firmware - show "Switch to Classic" button only
         switchToClassicBtn.classList.add('visible');
     } else if (deviceType === 'bootsel') {
-        // BOOTSEL mode - show both buttons
-        switchToClassicBtn.classList.add('visible');
-        switchToSantrollerBtn.classList.add('visible');
+        // BOOTSEL mode - show options only when hardware version is known
+        if (hasKnownHardwareVersion) {
+            switchToClassicBtn.classList.add('visible');
+            switchToSantrollerBtn.classList.add('visible');
+        } else {
+            showVersionRequiredNotice();
+        }
     }
 }
 
@@ -319,15 +351,11 @@ async function flashFirmware(targetFirmware) {
             }
 
             console.log('[FLASH] Calling Santroller USB reboot...');
-            // Prepare pending flash fallback in case main misses the mount event
-            try {
-                const pendingFirmwareName = `${targetFirmware === 'classic' ? 'Classic' : 'Santroller'}-${versionForFlash}`;
-                const pendingFirmwareUrl = FIRMWARE_URLS[pendingFirmwareName];
-                pendingFlash = { firmwareName: pendingFirmwareName, firmwareUrl: pendingFirmwareUrl };
-                autoFlashActive = false;
-            } catch (e) {
-                console.warn('[FLASH] Could not prepare pendingFlash fallback:', e && e.message ? e.message : e);
-            }
+            // startFlashWithVersionDetection handles BOOTSEL detection end-to-end.
+            // Disable renderer pendingFlash fallback to prevent a concurrent second
+            // flash attempt racing with the main-process watcher.
+            pendingFlash = null;
+            autoFlashActive = false;
 
             await window.electronAPI.resetSantrollerHID(currentDevice.path);
             
@@ -339,22 +367,22 @@ async function flashFirmware(targetFirmware) {
             console.log('[FLASH] Invoking startFlashWithVersionDetection with', targetFirmware, versionForFlash);
             try {
                 await window.electronAPI.startFlashWithVersionDetection(targetFirmware, versionForFlash);
+                // Clear pending fallback immediately so the detectDevice polling loop
+                // cannot fire a second concurrent flash if BOOTSEL briefly reappears.
+                pendingFlash = null;
+                autoFlashActive = false;
                 console.log('[FLASH] startFlashWithVersionDetection resolved');
             } catch (e) {
+                pendingFlash = null;
                 console.error('[FLASH] startFlashWithVersionDetection rejected:', e && e.message ? e.message : e);
                 throw e;
             }
         } else if (currentDevice.type === 'classic') {
             console.log('[FLASH] Calling Classic serial reboot...');
-            // Prepare pending flash fallback in case main misses the mount event
-            try {
-                const pendingFirmwareName = `${targetFirmware === 'classic' ? 'Classic' : 'Santroller'}-${versionForFlash}`;
-                const pendingFirmwareUrl = FIRMWARE_URLS[pendingFirmwareName];
-                pendingFlash = { firmwareName: pendingFirmwareName, firmwareUrl: pendingFirmwareUrl };
-                autoFlashActive = false;
-            } catch (e) {
-                console.warn('[FLASH] Could not prepare pendingFlash fallback (classic):', e && e.message ? e.message : e);
-            }
+            // Classic path already uses main-process BOOTSEL watcher.
+            // Avoid renderer fallback here to prevent duplicate concurrent flashes.
+            pendingFlash = null;
+            autoFlashActive = false;
 
             await window.electronAPI.resetClassicSerial(currentDevice.path);
             
@@ -373,6 +401,7 @@ async function flashFirmware(targetFirmware) {
             console.log('[FLASH] Invoking startFlash (direct classic) with', firmwareName, firmwareUrl);
             try {
                 await window.electronAPI.startFlash(firmwareName, firmwareUrl);
+                pendingFlash = null;
                 console.log('[FLASH] startFlash (direct classic) resolved');
             } catch (e) {
                 console.error('[FLASH] startFlash (direct classic) rejected:', e && e.message ? e.message : e);
