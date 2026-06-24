@@ -604,6 +604,21 @@ select option:disabled {
   font-weight: bold;
 }
 
+#save-custom-btn {
+  margin-top: 10px;
+  width: 220px;
+  min-width: 220px;
+  box-sizing: border-box;
+  text-align: center;
+  background: #28D0AF;
+  color: #222;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  padding: 0.7em 2em;
+  cursor: pointer;
+}
+
 /* Fret and strum areas */
 .fret-area,
 .strum-area {
