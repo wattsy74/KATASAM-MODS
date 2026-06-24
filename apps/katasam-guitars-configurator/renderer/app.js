@@ -485,6 +485,7 @@ let isFlashingFirmware = false;
 const liveColors = new Map();
 // Global flag for bootsel prompt state
 let bootselPrompted = false;
+let bootselPollSuppressedUntil = 0;
 
 // Expose functions to control isFlashingFirmware flag for firmwareUpdater
 window.setFlashingFirmware = function(value) {
@@ -762,7 +763,6 @@ function runMiddleFretDetectAttempt(port, attemptIndex, attemptTimeoutMs = 2600)
         appendHardwareDetectTrace(`DIAG local handler error: ${err.message || 'unknown error'}`);
       }
     };
-
     const finish = (result) => {
       if (settled) return;
       settled = true;
@@ -886,14 +886,59 @@ async function detectHardwareVersionFromMiddleFretSignal(timeoutMs = 9000) {
     }
 
     appendHardwareDetectTrace(`Current config version inferred as '${inferCurrentConfigVersion() || 'unknown'}'`);
-    const result = await runMiddleFretDetectAttempt(activePort, 1, attemptWindowMs);
-    if (result === 'v1' || result === 'v2') {
-      appendHardwareDetectTrace(`Detection resolved as ${result.toUpperCase()}`);
-      return result;
-    }
 
-    appendHardwareDetectTrace('Detection failed for this try');
-    return null;
+    // Reuse the same diagnostics polling path that is known to work in the Diagnostics panel.
+    window.__diagPinStatusMap = {};
+    window.__diagHatStatusMap = {};
+
+    try {
+      const canUseHatPolling = typeof window.startDiagHatStatusPolling === 'function' && !!originalConfig;
+      if (!canUseHatPolling) {
+        appendHardwareDetectTrace('Hat poller unavailable (config not ready), falling back to direct detection');
+        const fallback = await runMiddleFretDetectAttempt(activePort, 1, attemptWindowMs);
+        return fallback === 'v1' || fallback === 'v2' ? fallback : null;
+      }
+
+      if (typeof window.startDiagPinStatusPolling === 'function') {
+        window.startDiagPinStatusPolling(true);
+      } else {
+        appendHardwareDetectTrace('Pin poller unavailable, falling back to direct detection');
+        const fallback = await runMiddleFretDetectAttempt(activePort, 1, attemptWindowMs);
+        return fallback === 'v1' || fallback === 'v2' ? fallback : null;
+      }
+
+      window.startDiagHatStatusPolling(true);
+
+      appendHardwareDetectTrace('Diagnostics pin/hat polling started (forced)');
+
+      const startedAt = Date.now();
+      while ((Date.now() - startedAt) < attemptWindowMs) {
+        const pinStates = window.__diagPinStatusMap || {};
+        const hatStates = window.__diagHatStatusMap || {};
+
+        if (hatStates.LEFT === '1') {
+          appendHardwareDetectTrace('Detection resolved via diagnostics: LEFT=1 -> V2');
+          return 'v2';
+        }
+        if (pinStates.TILT === '1') {
+          appendHardwareDetectTrace('Detection resolved via diagnostics: TILT=1 -> V1');
+          return 'v1';
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 60));
+      }
+
+      appendHardwareDetectTrace('Detection failed for this try');
+      return null;
+    } finally {
+      if (typeof window.stopDiagPinStatusPolling === 'function') {
+        window.stopDiagPinStatusPolling();
+      }
+      if (typeof window.stopDiagHatStatusPolling === 'function') {
+        window.stopDiagHatStatusPolling();
+      }
+      appendHardwareDetectTrace('Diagnostics pin/hat polling stopped');
+    }
   };
 
   try {
@@ -912,6 +957,11 @@ async function detectHardwareVersionFromMiddleFretSignal(timeoutMs = 9000) {
 }
 
 async function detectHardwareVersionFromMiddleFretPrompt(contextLabel = 'defaults') {
+  if (contextLabel === 'post-flash-reconnect' || contextLabel === 'post-flash-connect') {
+    updateStatus('Preparing hardware detection...', false);
+    await new Promise(resolve => setTimeout(resolve, 10000));
+  }
+
   await customAlert(
     'Click OK, then press and hold the Middle Fret button so we can detect and apply the correct config.',
     { title: 'Hardware Detection' }
@@ -960,6 +1010,32 @@ async function applyDetectedHardwareDefaultsToSession(contextLabel = 'defaults')
   configDirty = true;
   const applyBtn = document.getElementById('apply-config-btn');
   if (applyBtn) applyBtn.style.display = 'inline-block';
+
+  const isPostFlashContext = contextLabel === 'post-flash-reconnect' || contextLabel === 'post-flash-connect';
+  if (isPostFlashContext) {
+    const activeDevice = window.multiDeviceManager?.getActiveDevice?.();
+    const port = activeDevice?.port || connectedPort;
+
+    if (port) {
+      try {
+        updateStatus(`Detected ${detectedVersion.toUpperCase()} hardware. Applying config...`, false);
+        await window.serialFileIO.writeFile(port, 'config.json', JSON.stringify(defaultsConfig, null, 2), 15000);
+
+        configDirty = false;
+        if (applyBtn) applyBtn.style.display = 'none';
+
+        showToast(`Detected ${detectedVersion.toUpperCase()} hardware. Config applied. Rebooting device...`, 'success');
+        rebootAndReload('config.json');
+
+        return { detectedVersion, defaultsConfig, autoApplied: true };
+      } catch (err) {
+        console.error('[hardware-detect] Auto-apply after post-flash detection failed:', err);
+        showToast('Hardware detected, but auto-apply failed. Leaving defaults in session.', 'warning');
+      }
+    } else {
+      console.warn('[hardware-detect] No active port for auto-apply; leaving defaults in session');
+    }
+  }
 
   await customAlert(
     `Detected ${detectedVersion.toUpperCase()} hardware.\n\nLoaded ${detectedVersion.toUpperCase()} defaults into session.`
@@ -2195,6 +2271,7 @@ function loadCachedPresetsData() {
 const populatePresetDropdown = (presets, isUserPresets = false) => {
 // ...existing code...
   const id = isUserPresets ? 'user-preset-select' : 'preset-select';
+  const userSlotNames = ['User 1', 'User 2', 'User 3', 'User 4', 'User 5', 'User 6'];
   const select = document.getElementById(id);
   console.log(`[populatePresetDropdown] Called for ${id}. select:`, select, 'presets:', presets);
   if (!select) {
@@ -2211,15 +2288,33 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
 
   if (!presets) {
     console.error('[populatePresetDropdown] No presets data provided');
-    top.textContent = isUserPresets ? 'No user presets available' : 'No presets available';
+    if (isUserPresets) {
+      userSlotNames.forEach(slot => {
+        const opt = document.createElement('option');
+        opt.value = slot;
+        opt.textContent = slot;
+        select.appendChild(opt);
+      });
+      return;
+    }
+    top.textContent = 'No presets available';
     return;
   }
 
   // Handle new versioned structure - extract just the presets
-  const presetsData = presets.presets || presets;
+  const presetsData = (presets && typeof presets === 'object') ? (presets.presets || presets) : {};
   if (!presetsData || Object.keys(presetsData).length === 0) {
     console.error('[populatePresetDropdown] presetsData is empty or missing:', presetsData);
-    top.textContent = isUserPresets ? 'No user presets available' : 'No presets available';
+    if (isUserPresets) {
+      userSlotNames.forEach(slot => {
+        const opt = document.createElement('option');
+        opt.value = slot;
+        opt.textContent = slot;
+        select.appendChild(opt);
+      });
+      return;
+    }
+    top.textContent = 'No presets available';
     return;
   }
 
@@ -2232,7 +2327,15 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
   const keys = Object.keys(presetsData).filter(key => {
     // Filter out "Select Preset" if it exists as an actual preset
     return key !== 'Select Preset';
-  }).sort((a, b) => {
+  });
+
+  if (isUserPresets) {
+    userSlotNames.forEach(slot => {
+      if (!keys.includes(slot)) keys.push(slot);
+    });
+  }
+
+  keys.sort((a, b) => {
     // Sort alphabetically (A-Z), case-insensitive
     return a.toLowerCase().localeCompare(b.toLowerCase());
   });
@@ -2241,7 +2344,7 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
 
   for (const key of keys) {
     const value = presetsData[key];
-    if (!value) {
+    if (!value && !isUserPresets) {
       console.error(`[populatePresetDropdown] No value for key: ${key}`);
       continue;
     }
@@ -3244,6 +3347,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function detectUnprogrammedController() {
+    const now = Date.now();
+
+    // Respect a temporary cooldown after the user accepted a BOOTSEL flash prompt.
+    if (now < bootselPollSuppressedUntil) {
+      return;
+    }
+
     // Don't detect if already prompted, currently flashing
     if (bootselPrompted || isFlashingFirmware) {
       console.log("🛑 BOOTSEL detection skipped - bootselPrompted:", bootselPrompted, "isFlashingFirmware:", isFlashingFirmware);
@@ -3312,6 +3422,8 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log("✅ RP2040 detected, ready to flash...");
     customConfirm("New controller detected.\n\nWould you like to flash KATASAM firmware?").then(confirmFlash => {
       if (confirmFlash) {
+        // Once user clicks yes, suppress BOOTSEL polling for 60s to avoid re-prompt loops.
+        bootselPollSuppressedUntil = Date.now() + 60 * 1000;
         flashFirmwareTo(drivePath);
       } else { 
         console.log("❌ Flash was cancelled or dialog failed."); 
@@ -3595,6 +3707,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function detectRebootedController() {
     console.log("🔍 Starting to detect rebooted controller after firmware flash...");
+
+    // Ensure only the latest post-flash detection loop remains active.
+    const detectSessionId = Date.now();
+    window._postFlashDetectSessionId = detectSessionId;
     
     // Reset flags
     isFlashingFirmware = false;
@@ -3611,8 +3727,62 @@ document.addEventListener('DOMContentLoaded', () => {
     let attempts = 0;
     const maxAttempts = 20; // Poll for up to 10 seconds
     const pollInterval = 500; // Check every 500ms
+    let reconnectUiShown = false;
+
+    async function waitForDeviceFilesLoadedAfterReconnect(device, timeoutMs = 8000) {
+      const manager = window.multiDeviceManager;
+      const targetId = device?.id || device?.path || device?.port?.path;
+
+      const isReady = () => {
+        const active = manager?.getActiveDevice?.();
+        if (!active) return false;
+
+        const activeId = active.id || active.path || active.port?.path;
+        if (targetId && activeId && targetId !== activeId) return false;
+
+        return !!(active.config || active.presets || active.userPresets || window.originalConfig);
+      };
+
+      if (isReady()) {
+        console.log('[detectRebootedController] Device files already loaded after reconnect');
+        return true;
+      }
+
+      updateStatus('Waiting for device files to load before hardware detection...', false);
+
+      return await new Promise((resolve) => {
+        let settled = false;
+        let timer = null;
+
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          document.removeEventListener('deviceFilesLoaded', onLoaded);
+          resolve(ok);
+        };
+
+        const onLoaded = () => {
+          if (isReady()) {
+            console.log('[detectRebootedController] deviceFilesLoaded received for active device');
+            finish(true);
+          }
+        };
+
+        document.addEventListener('deviceFilesLoaded', onLoaded);
+        timer = setTimeout(() => {
+          console.warn('[detectRebootedController] Timed out waiting for device files; proceeding with detection');
+          finish(false);
+        }, timeoutMs);
+      });
+    }
     
     async function pollForDevice() {
+      if (window._postFlashDetectSessionId !== detectSessionId) {
+        console.log('[detectRebootedController] Stale detect loop aborted');
+        return;
+      }
+
       attempts++;
       console.log(`[detectRebootedController] Poll attempt ${attempts}/${maxAttempts}`);
       
@@ -3640,13 +3810,18 @@ document.addEventListener('DOMContentLoaded', () => {
               window.multiDeviceManager.setActiveDevice(device);
             }
             
-            showToast("Controller rebooted and ready 🎉", "success");
-            updateStatus("Controller reconnected successfully", true);
+            if (!reconnectUiShown) {
+              showToast("Controller rebooted and ready 🎉", "success");
+              updateStatus("Controller reconnected successfully", true);
+              reconnectUiShown = true;
+            }
             
             // Update UI
             if (window.updateActiveButtonText) {
               window.updateActiveButtonText(device);
             }
+
+            await waitForDeviceFilesLoadedAfterReconnect(device);
 
             try {
               await applyDetectedHardwareDefaultsToSession('post-flash-reconnect');
@@ -3667,14 +3842,19 @@ document.addEventListener('DOMContentLoaded', () => {
               if (window.multiDeviceManager.connectDevice) {
                 await window.multiDeviceManager.connectDevice(device.id, false); // Suppress toast during auto-reconnection after firmware flash
                 console.log("✅ Successfully connected to device after firmware flash");
-                
-                showToast("Controller rebooted and ready 🎉", "success");
-                updateStatus("Controller reconnected successfully", true);
+
+                if (!reconnectUiShown) {
+                  showToast("Controller rebooted and ready 🎉", "success");
+                  updateStatus("Controller reconnected successfully", true);
+                  reconnectUiShown = true;
+                }
                 
                 // Update UI
                 if (window.updateActiveButtonText) {
                   window.updateActiveButtonText(device);
                 }
+
+                await waitForDeviceFilesLoadedAfterReconnect(device);
 
                 try {
                   await applyDetectedHardwareDefaultsToSession('post-flash-connect');
@@ -4121,7 +4301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const slot = select?.selectedOptions[0]?.textContent.trim();
 
     // ✅ Validate slot
-    const allowed = ["User 1", "User 2", "User 3", "User 4", "User 5"];
+    const allowed = ["User 1", "User 2", "User 3", "User 4", "User 5", "User 6"];
     if (!allowed.includes(slot)) {
       customAlert(`Invalid slot "${slot}". Please choose one from the dropdown.`);
       return;
