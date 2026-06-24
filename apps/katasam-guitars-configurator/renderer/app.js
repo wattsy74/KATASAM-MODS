@@ -2273,9 +2273,22 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
   const id = isUserPresets ? 'user-preset-select' : 'preset-select';
   const userSlotNames = ['User 1', 'User 2', 'User 3', 'User 4', 'User 5', 'User 6'];
   const select = document.getElementById(id);
+  const normalizedPresetsData = (presets && typeof presets === 'object') ? (presets.presets || presets) : {};
+
+  if (isUserPresets) {
+    window.userPresetsData = normalizedPresetsData;
+    window.userPresets = normalizedPresetsData;
+    window.loadedUserPresets = normalizedPresetsData;
+    if (typeof window.refreshUserPresetSlotButtons === 'function') {
+      window.refreshUserPresetSlotButtons();
+    }
+  }
+
   console.log(`[populatePresetDropdown] Called for ${id}. select:`, select, 'presets:', presets);
   if (!select) {
-    console.error(`[populatePresetDropdown] No select element found for id: ${id}`);
+    if (!isUserPresets) {
+      console.error(`[populatePresetDropdown] No select element found for id: ${id}`);
+    }
     return;
   }
   select.innerHTML = '';
@@ -2302,7 +2315,7 @@ const populatePresetDropdown = (presets, isUserPresets = false) => {
   }
 
   // Handle new versioned structure - extract just the presets
-  const presetsData = (presets && typeof presets === 'object') ? (presets.presets || presets) : {};
+  const presetsData = normalizedPresetsData;
   if (!presetsData || Object.keys(presetsData).length === 0) {
     console.error('[populatePresetDropdown] presetsData is empty or missing:', presetsData);
     if (isUserPresets) {
@@ -2601,9 +2614,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   }
   // Device Selector Button logic
-  // Hide save button by default
-  const saveCustomBtn = document.getElementById('save-custom-btn');
-  if (saveCustomBtn) saveCustomBtn.style.display = 'none';
   // Ensure pickerRoot is defined before any usage
   const pickerRoot = document.querySelector('#picker-root');
   const deviceSelectorButton = document.getElementById('deviceSelectorButton');
@@ -4111,68 +4121,112 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const current = collectCurrentColors();
     const changed = JSON.stringify(current) !== JSON.stringify(activeUserPreset);
-
-    const btn = document.getElementById('save-custom-btn');
-    btn.style.display = changed ? 'inline-block' : 'none';
     isDirty = changed;
     configDirty = true;
     document.getElementById('apply-config-btn').style.display = 'inline-block';
 
   }
 
-  document.getElementById('user-preset-select')?.addEventListener('change', e => {
-    try {
-      const slot = e.target?.value;
-      // --- PATCH: Always use window.userPresetsData, fallback to parsing window.userPresets if needed ---
-      let userPresetsData = window.userPresetsData;
-      if (!userPresetsData && window.userPresets) {
-        if (typeof window.userPresets === 'string') {
-          try {
-            window.userPresets = JSON.parse(window.userPresets);
-          } catch (err) {
-            console.error('[user-preset-select] Failed to parse window.userPresets:', err);
-            window.userPresets = {};
-          }
+  const USER_PRESET_SLOT_NAMES = ['User 1', 'User 2', 'User 3', 'User 4', 'User 5', 'User 6'];
+  const USER_PRESET_LONG_PRESS_MS = 700;
+  let selectedUserPresetSlot = null;
+  const userPresetSlotButtons = Array.from(document.querySelectorAll('.user-preset-slot-btn'));
+  const userPresetHint = document.getElementById('user-preset-hint');
+
+  const isUserPresetDeviceConnected = () => {
+    const activeDevice = window.multiDeviceManager?.getActiveDevice?.();
+    return !!((activeDevice && activeDevice.isConnected) || connectedPort);
+  };
+
+  const updateUserPresetSlotInteractivity = () => {
+    const enabled = isUserPresetDeviceConnected();
+    userPresetSlotButtons.forEach(btn => {
+      btn.disabled = !enabled;
+      btn.classList.toggle('disabled', !enabled);
+    });
+    if (userPresetHint) {
+      userPresetHint.textContent = enabled
+        ? 'Tap a slot to load. Hold to save current colors.'
+        : 'Connect a device to load or save user preset slots.';
+    }
+  };
+
+  const getUserPresetsData = () => {
+    let data = window.userPresetsData;
+    if (!data && window.userPresets) {
+      if (typeof window.userPresets === 'string') {
+        try {
+          window.userPresets = JSON.parse(window.userPresets);
+        } catch (err) {
+          console.error('[user-presets] Failed to parse window.userPresets:', err);
+          window.userPresets = {};
         }
-        userPresetsData = window.userPresets;
       }
-      // Defensive: log type and keys
-      console.log('[user-preset-select] userPresetsData type:', typeof userPresetsData, 'keys:', userPresetsData ? Object.keys(userPresetsData) : null);
-      const preset = userPresetsData?.[slot];
-      if (!preset || typeof preset !== 'object') {
-        console.warn('User preset not found or invalid:', slot, preset);
+      data = window.userPresets;
+    }
+    return (data && typeof data === 'object') ? data : {};
+  };
+
+  const setUserPresetsData = (data) => {
+    const normalized = (data && typeof data === 'object') ? data : {};
+    window.userPresetsData = normalized;
+    window.userPresets = normalized;
+    window.loadedUserPresets = normalized;
+  };
+
+  const refreshUserPresetSlotButtons = () => {
+    const userPresetsData = getUserPresetsData();
+    const connected = isUserPresetDeviceConnected();
+    userPresetSlotButtons.forEach(btn => {
+      const slot = btn.dataset.slot;
+      const hasData = !!(slot && userPresetsData[slot] && typeof userPresetsData[slot] === 'object');
+      btn.classList.toggle('has-data', hasData);
+      btn.classList.toggle('selected', slot === selectedUserPresetSlot);
+      if (!connected) {
+        btn.title = `${slot}: connect a device to load or save`;
+      } else {
+        btn.title = hasData ? `${slot}: click to load, hold to save` : `${slot}: empty (hold to save)`;
+      }
+    });
+  };
+
+  window.refreshUserPresetSlotButtons = refreshUserPresetSlotButtons;
+
+  const applyUserPresetSlot = (slot) => {
+    try {
+      const factoryPresetSelect = document.getElementById('preset-select');
+      if (factoryPresetSelect) {
+        factoryPresetSelect.value = '';
+        factoryPresetSelect.selectedIndex = 0;
+      }
+
+      if (!USER_PRESET_SLOT_NAMES.includes(slot)) {
+        customAlert(`Invalid slot "${slot}".`);
         return;
       }
-      // Convert all color values in preset to hex (handles legacy rgb() values)
-      const rgbToHex = (rgb) => {
-        if (typeof rgb !== 'string') return rgb;
-        if (rgb.startsWith('#')) return rgb;
-        const match = rgb.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
-        if (!match) return rgb;
-        return (
-          '#' +
-          [1, 2, 3]
-            .map(i => parseInt(match[i], 10).toString(16).padStart(2, '0'))
-            .join('')
-        ).toUpperCase();
-      };
+
+      const userPresetsData = getUserPresetsData();
+      const preset = userPresetsData?.[slot];
+      if (!preset || typeof preset !== 'object') {
+        customAlert(`${slot} is empty. Hold the slot to save your current colors.`);
+        return;
+      }
+
       const presetHex = {};
       for (const [k, v] of Object.entries(preset)) {
-        presetHex[k] = rgbToHex(v);
+        presetHex[k] = colorValueToHex(v);
       }
       activeUserPreset = presetHex;
+      selectedUserPresetSlot = slot;
       isDirty = false;
 
-      // Defensive: Only update color arrays, never overwrite required fields
       if (!originalConfig) {
-        // Skip automatic config reading if diagnostic setup is in progress
         if (window.setupDeviceInformationInProgress) {
           console.log('[applyUserPreset] Skipping config reload - diagnostic setup in progress');
           customAlert('Diagnostic setup in progress. Please try again in a moment.');
           return;
         }
-        
-        // Try to reload config from device
+
         if (window.connectedPort) {
           updateStatus('No config loaded, reloading from device...', false);
           try {
@@ -4180,7 +4234,6 @@ document.addEventListener('DOMContentLoaded', () => {
             window.awaitingFile = "config.json";
             window.responseBuffers = window.responseBuffers || {};
             window.responseBuffers[window.awaitingFile] = '';
-            // Optionally, you could set a timeout to retry applying the preset after config loads
             customAlert('No configuration loaded. Reloading from device. Please try again in a moment.');
           } catch (err) {
             console.error('Failed to request config from device:', err);
@@ -4191,29 +4244,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         return;
       }
-      // Only update color arrays, never overwrite the rest of the config
+
       const configUtils = require('./configUtils.js');
-      // Deep copy to avoid accidental mutation
       const safeConfig = JSON.parse(JSON.stringify(originalConfig));
       configUtils.applyPresetToConfig(safeConfig, presetHex);
-      // Copy only color arrays back to originalConfig
       if (safeConfig.led_color) originalConfig.led_color = safeConfig.led_color;
       if (safeConfig.released_color) originalConfig.released_color = safeConfig.released_color;
-
-      const btn = document.getElementById('save-custom-btn');
-      btn.style.display = 'none';
 
       configDirty = true;
       document.getElementById('apply-config-btn').style.display = 'inline-block';
 
-      const slotLabel = e.target.selectedOptions[0]?.textContent.trim();
-      if (btn && slotLabel && /^User \d$/.test(slotLabel)) {
-        btn.textContent = `Update ${slotLabel}`;
-      } else {
-        btn.textContent = `Save changes`;
-      }
-
-      // Update UI colors for buttons
       for (const [label, hex] of Object.entries(presetHex)) {
         const match = document.getElementById(label);
         if (match) {
@@ -4223,40 +4263,113 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Always preview released colors if released state is selected, otherwise pressed
       let state = document.querySelector('.fret-toggle .fret-toggle-button.selected[data-state]')?.dataset.state;
       if (!state) state = 'released';
       setTimeout(() => {
-        console.log(`[PREVIEW] User preset select, previewing state: ${state}`);
+        console.log(`[PREVIEW] User preset slot load (${slot}), previewing state: ${state}`);
         sendPreviewForVisibleButtons(state);
       }, 30);
 
+      refreshUserPresetSlotButtons();
+      showToast(`Loaded ${slot}`, 'info');
     } catch (err) {
-      console.warn("Failed to auto-load preset:", err);
+      console.warn('Failed to load user preset slot:', err);
     }
+  };
+
+  const saveUserPresetSlot = (slot) => {
+    if (!USER_PRESET_SLOT_NAMES.includes(slot)) {
+      customAlert(`Invalid slot "${slot}".`);
+      return;
+    }
+
+    if (!connectedPort) {
+      customAlert('Connect a device before saving a user preset.');
+      return;
+    }
+
+    const data = collectCurrentColors();
+    Object.keys(data).forEach(k => {
+      if (data[k]?.startsWith('rgb')) data[k] = rgbToHex(data[k]);
+    });
+    const payload = JSON.stringify({ [slot]: data });
+
+    try {
+      connectedPort.write("IMPORTUSER\n");
+      connectedPort.write(payload + "\n");
+      connectedPort.write("END\n");
+      awaitingFile = 'user_presets.json';
+      responseBuffers[awaitingFile] = '';
+      connectedPort.write("READFILE:user_presets.json\n");
+
+      isDirty = false;
+      activeUserPreset = collectCurrentColors();
+      selectedUserPresetSlot = slot;
+
+      const merged = { ...getUserPresetsData(), [slot]: activeUserPreset };
+      setUserPresetsData(merged);
+      refreshUserPresetSlotButtons();
+
+      showToast(`Saved to ${slot}`, 'success');
+    } catch (err) {
+      console.error('Failed to send preset data:', err);
+      showToast('Save failed', 'error');
+    }
+  };
+
+  userPresetSlotButtons.forEach(btn => {
+    const slot = btn.dataset.slot;
+    let holdTimer = null;
+    let holdTriggered = false;
+
+    btn.addEventListener('pointerdown', (e) => {
+      if (!slot) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+      holdTriggered = false;
+      btn.classList.add('saving');
+      btn.setPointerCapture?.(e.pointerId);
+      holdTimer = setTimeout(() => {
+        holdTriggered = true;
+        saveUserPresetSlot(slot);
+      }, USER_PRESET_LONG_PRESS_MS);
+    });
+
+    const endPress = () => {
+      clearTimeout(holdTimer);
+      btn.classList.remove('saving');
+      if (!holdTriggered && slot) {
+        applyUserPresetSlot(slot);
+      }
+      holdTriggered = false;
+    };
+
+    btn.addEventListener('pointerup', endPress);
+    btn.addEventListener('pointercancel', () => {
+      clearTimeout(holdTimer);
+      btn.classList.remove('saving');
+      holdTriggered = false;
+    });
   });
 
+  refreshUserPresetSlotButtons();
+  updateUserPresetSlotInteractivity();
+
+  if (window.multiDeviceManager && typeof window.multiDeviceManager.on === 'function') {
+    window.multiDeviceManager.on('activeDeviceChanged', () => {
+      updateUserPresetSlotInteractivity();
+      refreshUserPresetSlotButtons();
+    });
+    window.multiDeviceManager.on('deviceDisconnected', () => {
+      updateUserPresetSlotInteractivity();
+      refreshUserPresetSlotButtons();
+    });
+  }
 
   const presetSelect = document.getElementById('preset-select');
-  const userPresetSelect = document.getElementById('user-preset-select');
-
   presetSelect?.addEventListener('change', () => {
-    if (userPresetSelect) userPresetSelect.selectedIndex = 0;
-    // Removed undefined bg conversion block
-  });
-
-  userPresetSelect?.addEventListener('change', () => {
-    if (presetSelect) presetSelect.selectedIndex = 0;
-    // Show save button if a valid user slot is selected
-    const btn = document.getElementById('save-custom-btn');
-    const slotLabel = userPresetSelect.selectedOptions[0]?.textContent.trim();
-    if (btn && slotLabel && /^User \d$/.test(slotLabel)) {
-      btn.style.display = 'inline-block';
-      btn.textContent = `Update ${slotLabel}`;
-    } else if (btn) {
-      btn.style.display = 'none';
-      btn.textContent = `Save changes`;
-    }
+    selectedUserPresetSlot = null;
+    refreshUserPresetSlotButtons();
   });
 
 
@@ -4293,46 +4406,6 @@ document.addEventListener('DOMContentLoaded', () => {
       window.close();
     }
   });
-  document.getElementById('save-custom-btn')?.addEventListener('click', () => {
-    console.log("Save button clicked");
-
-    // ✅ Pull slot label from dropdown, not prompt
-    const select = document.getElementById('user-preset-select');
-    const slot = select?.selectedOptions[0]?.textContent.trim();
-
-    // ✅ Validate slot
-    const allowed = ["User 1", "User 2", "User 3", "User 4", "User 5", "User 6"];
-    if (!allowed.includes(slot)) {
-      customAlert(`Invalid slot "${slot}". Please choose one from the dropdown.`);
-      return;
-    }
-
-    // ✅ Collect data and send IMPORTUSER command (guaranteed hex colors)
-    const data = collectCurrentColors();
-    // Defensive: ensure all values are hex (in case of legacy data)
-    Object.keys(data).forEach(k => {
-      if (data[k]?.startsWith('rgb')) data[k] = rgbToHex(data[k]);
-    });
-    const payload = JSON.stringify({ [slot]: data });
-
-    try {
-      if (connectedPort) {
-        connectedPort.write("IMPORTUSER\n");
-        connectedPort.write(payload + "\n");
-        connectedPort.write("END\n");
-        awaitingFile = 'user_presets.json';
-        responseBuffers[awaitingFile] = '';
-        connectedPort.write("READFILE:user_presets.json\n");
-      }
-      isDirty = false;
-      document.getElementById('save-custom-btn').style.display = 'none';
-      activeUserPreset = collectCurrentColors(); // update reference
-    } catch (err) {
-      console.error("Failed to send preset data:", err);
-      showToast("Save failed", 'error');
-    }
-  });
-
   const restoreLiveColors = selector => {
     document.querySelectorAll(selector).forEach(el => {
       const data = liveColors.get(el);

@@ -604,19 +604,60 @@ select option:disabled {
   font-weight: bold;
 }
 
-#save-custom-btn {
-  margin-top: 10px;
+.user-preset-radio {
+  margin-top: 12px;
   width: 220px;
-  min-width: 220px;
-  box-sizing: border-box;
-  text-align: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.user-preset-slot-btn {
+  width: 31px;
+  height: 31px;
+  border-radius: 999px;
+  border: 2px solid #28D0AF;
+  background: #222;
+  color: #d9d9d9;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
+}
+
+.user-preset-slot-btn:hover {
+  transform: translateY(-1px);
+}
+
+.user-preset-slot-btn:disabled,
+.user-preset-slot-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.user-preset-slot-btn.has-data {
+  color: #fff;
+}
+
+.user-preset-slot-btn.selected,
+.user-preset-slot-btn.saving {
   background: #28D0AF;
   color: #222;
-  font-weight: bold;
-  border: none;
-  border-radius: 8px;
-  padding: 0.7em 2em;
-  cursor: pointer;
+  border-color: #28D0AF;
+}
+
+.user-preset-slot-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(40, 208, 175, 0.35);
+}
+
+.user-preset-hint {
+  margin-top: 8px;
+  width: 220px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #9fa8b2;
 }
 
 /* Fret and strum areas */
@@ -1383,7 +1424,7 @@ select option:disabled {
 }
 
 /* Enhanced tooltip styling for button config */
-[title] {
+.tooltip-cell[title] {
   position: relative;
   cursor: help;
 }

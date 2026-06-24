@@ -151,10 +151,15 @@
             <select id="preset-select" class="preset-dropdown">
               
             </select>
-            <select id="user-preset-select" class="preset-dropdown">
-              
-            </select>
-            <button id="save-custom-btn" class="fret-toggle-button" style="display: none;">Save changes</button>
+            <div id="user-preset-radio" class="user-preset-radio" aria-label="User preset slots">
+              <button type="button" class="user-preset-slot-btn" data-slot="User 1" aria-label="User preset slot 1">1</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 2" aria-label="User preset slot 2">2</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 3" aria-label="User preset slot 3">3</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 4" aria-label="User preset slot 4">4</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 5" aria-label="User preset slot 5">5</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 6" aria-label="User preset slot 6">6</button>
+            </div>
+            <div id="user-preset-hint" class="user-preset-hint">Tap a slot to load. Hold to save current colors.</div>
           </div>
         </div>
       </div>

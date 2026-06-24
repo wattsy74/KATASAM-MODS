@@ -402,6 +402,9 @@ Test checklist
 Notes
 - 2026-06-23: Initial scope captured from user request; requires coordinated firmware + configurator changes.
 - 2026-06-23: App-side preparation started by enabling six user slots in renderer validation/dropdown handling.
+- 2026-06-24: Replaced ambiguous user preset dropdown/update flow with six dedicated slot buttons (`1..6`) in a radio-style row.
+- 2026-06-24: Implemented explicit slot interactions in app UI: short click loads slot, long-press (700ms) saves current colours to that slot.
+- 2026-06-24: Added clarity and safety UX updates: selecting a user slot resets factory preset dropdown to `Select preset...`, and slot buttons remain disabled until a device is connected.
 
 ---
 
