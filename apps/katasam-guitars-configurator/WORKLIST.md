@@ -392,7 +392,7 @@ Definition of done
 - Backward compatibility: devices without FEAT-006 firmware continue to work with existing preset flows.
 
 Test checklist
-- [ ] Save colors from app into each slot `User 1` through `User 6` and verify values persist after reconnect.
+- [x] Save colors from app into each slot `User 1` through `User 6` and verify values persist after reconnect.
 - [ ] Enter switching mode using Guide long-press and confirm normal gameplay input is gated while active.
 - [ ] Press D-pad left/right in switching mode and confirm slot index changes with wraparound.
 - [ ] Press Start in switching mode and confirm selected slot is applied and saved as default.
@@ -405,6 +405,7 @@ Notes
 - 2026-06-24: Replaced ambiguous user preset dropdown/update flow with six dedicated slot buttons (`1..6`) in a radio-style row.
 - 2026-06-24: Implemented explicit slot interactions in app UI: short click loads slot, long-press (700ms) saves current colours to that slot.
 - 2026-06-24: Added clarity and safety UX updates: selecting a user slot resets factory preset dropdown to `Select preset...`, and slot buttons remain disabled until a device is connected.
+- 2026-06-24: User validation confirmed slot data remains readable in the UI after disconnect/reconnect.
 
 ---
 

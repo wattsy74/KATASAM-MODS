@@ -1,7 +1,7 @@
 {
     "device_name": "TEST CONFIG NAME",
     "_metadata": {
-        "version": "3.9.26",
+        "version": "5.0.0",
         "description": "KATASAM Guitar Controller Configuration",
         "lastUpdated": "2025-08-13"
     },
