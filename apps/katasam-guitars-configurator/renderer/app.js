@@ -3249,7 +3249,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Show passcode modal
+    // Show BOOTSEL confirmation modal
     const modal = document.getElementById('passcode-modal');
     const input = document.getElementById('passcode-input');
     const okBtn = document.getElementById('passcode-ok');
@@ -3269,7 +3269,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function onOk() {
-      if (input.value === "6997") {
+      if ((input.value || '').trim().toUpperCase() === "BOOTSEL") {
         cleanup();
         try {
           // Reset BOOTSEL detection flags before sending command
@@ -3277,7 +3277,7 @@ document.addEventListener('DOMContentLoaded', () => {
           isFlashingFirmware = false;
           
           connectedPort.write("REBOOTBOOTSEL\n");
-          updateStatus("Preparing to Reflash...", false);
+          updateStatus("Preparing BOOTSEL Mode...", false);
           
           // Force disconnect from multi-device manager to avoid interference
           setTimeout(() => {
@@ -3300,7 +3300,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function onCancel() {
       cleanup();
-      showToast("Reflash cancelled.", 'info');
+      showToast("BOOTSEL mode cancelled.", 'info');
     }
 
     function onKeyDown(e) {
