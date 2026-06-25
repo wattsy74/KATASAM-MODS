@@ -509,15 +509,24 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
         logSerial('[SERIAL] Port path: ' + portPath);
         logSerial('[SERIAL] Opening serial port at 115200 baud...');
         
-        const port = new SerialPort({ path: portPath, baudRate: 115200 });
+        const port = new SerialPort({ 
+            path: portPath, 
+            baudRate: 115200,
+            lock: false  // Don't lock the port exclusively on macOS
+        });
         
         return new Promise((resolve, reject) => {
+            let resolved = false;
+            
             const timeout = setTimeout(() => {
-                logSerial('[SERIAL] ✗ Timeout opening serial port');
-                try {
-                    port.close();
-                } catch (e) {}
-                reject(new Error('Timeout opening serial port'));
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[SERIAL] ✗ Timeout opening serial port');
+                    try {
+                        port.close();
+                    } catch (e) {}
+                    reject(new Error('Timeout opening serial port'));
+                }
             }, 5000);
             
             port.on('open', () => {
@@ -528,18 +537,28 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
                 port.write('REBOOTBOOTSEL\n', (err) => {
                     if (err) {
                         logSerial('[SERIAL] ✗ Failed to write command: ' + err.message);
-                        port.close();
-                        reject(err);
+                        if (!resolved) {
+                            resolved = true;
+                            try {
+                                port.close();
+                            } catch (e) {}
+                            reject(err);
+                        }
                     } else {
                         logSerial('[SERIAL] ✓ Command sent successfully');
                         logSerial('[SERIAL] Waiting 1 second for device to process...');
                         
                         setTimeout(() => {
                             logSerial('[SERIAL] ✓ Closing serial port');
-                            port.close();
-                            logSerial('[SERIAL] 🎉 Classic device should be entering BOOTSEL mode!');
-                            logSerial('========================================\n');
-                            resolve({ success: true });
+                            if (!resolved) {
+                                resolved = true;
+                                try {
+                                    port.close();
+                                } catch (e) {}
+                                logSerial('[SERIAL] 🎉 Classic device should be entering BOOTSEL mode!');
+                                logSerial('========================================\n');
+                                resolve({ success: true });
+                            }
                         }, 1000);
                     }
                 });
@@ -547,9 +566,15 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
             
             port.on('error', (err) => {
                 clearTimeout(timeout);
-                logSerial('[SERIAL] ✗ Serial port error: ' + err.message);
-                logSerial('========================================\n');
-                reject(err);
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[SERIAL] ✗ Serial port error: ' + err.message);
+                    logSerial('========================================\n');
+                    try {
+                        port.close();
+                    } catch (e) {}
+                    reject(err);
+                }
             });
         });
     } catch (error) {
@@ -1382,23 +1407,43 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
         logSerial('========================================');
         logSerial('[CONFIG] Port path: ' + portPath);
         
-        const port = new SerialPort({ path: portPath, baudRate: 115200 });
+        const port = new SerialPort({ 
+            path: portPath, 
+            baudRate: 115200,
+            lock: false  // Don't lock the port exclusively on macOS
+        });
         
         return new Promise((resolve, reject) => {
             let buffer = '';
             let inFile = false;
             let fileContent = [];
+            let resolved = false;
+            let dataReceived = false;
+            
             const timeout = setTimeout(() => {
-                logSerial('[CONFIG] ✗ Timeout reading config');
+                logSerial('[CONFIG] ✗ Timeout reading config (no data received in 15s)');
+                if (!dataReceived) {
+                    logSerial('[CONFIG] ⚠️  No data received at all - device may not be responding');
+                }
+                resolved = true;
                 try {
                     port.close();
                 } catch (e) {}
                 reject(new Error('Timeout reading config'));
-            }, 10000);
+            }, 15000);
+            
+            const cleanup = () => {
+                clearTimeout(timeout);
+                try {
+                    port.close();
+                } catch (e) {}
+            };
             
             port.on('data', (data) => {
+                dataReceived = true;
                 const chunk = data.toString('utf-8');
                 buffer += chunk;
+                logSerial('[CONFIG] Data chunk received (' + chunk.length + ' bytes)');
                 
                 const lines = buffer.split('\n');
                 buffer = lines.pop(); // Keep incomplete line in buffer
@@ -1411,7 +1456,16 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
                         inFile = true;
                         fileContent = [];
                         logSerial('[CONFIG] ✓ Started receiving config.json');
-                    } else if (trimmed === 'END_config.json') {
+                    } else if (trimmed.includes('END_config.json')) {
+                        // Handle case where END marker arrives on same line as JSON data
+                        const endIndex = trimmed.indexOf('END_config.json');
+                        if (endIndex > 0) {
+                            const jsonPart = trimmed.substring(0, endIndex).trim();
+                            if (jsonPart) {
+                                fileContent.push(jsonPart);
+                            }
+                        }
+                        
                         clearTimeout(timeout);
                         logSerial('[CONFIG] ✓ Finished receiving config.json');
                         
@@ -1437,12 +1491,15 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
                             writeCachedHardwareVersion(version, 'classic-config');
                             
                             logSerial('========================================\n');
-                            port.close();
+                            resolved = true;
+                            cleanup();
                             resolve({ success: true, version: version, config: config });
                         } catch (e) {
                             logSerial('[CONFIG] ✗ Failed to parse JSON: ' + e.message);
+                            logSerial('[CONFIG] JSON length: ' + fileContent.join('\n').length);
                             logSerial('========================================\n');
-                            port.close();
+                            resolved = true;
+                            cleanup();
                             reject(new Error('Failed to parse config.json: ' + e.message));
                         }
                         return;
@@ -1453,16 +1510,35 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
             });
             
             port.on('open', () => {
-                logSerial('[CONFIG] ✓ Serial port opened');
-                logSerial('[CONFIG] Sending READFILE:config.json command');
-                port.write('READFILE:config.json\n');
+                logSerial('[CONFIG] ✓ Serial port opened successfully');
+                logSerial('[CONFIG] Waiting 500ms for device to be ready...');
+                
+                // Small delay to allow device to stabilize after port open
+                setTimeout(() => {
+                    logSerial('[CONFIG] Sending READFILE:config.json command');
+                    try {
+                        port.write('READFILE:config.json\n');
+                        logSerial('[CONFIG] ✓ Command write call succeeded');
+                    } catch (e) {
+                        if (!resolved) {
+                            resolved = true;
+                            logSerial('[CONFIG] ✗ Failed to write command: ' + e.message);
+                            logSerial('========================================\n');
+                            cleanup();
+                            reject(e);
+                        }
+                    }
+                }, 500);
             });
             
             port.on('error', (err) => {
-                clearTimeout(timeout);
-                logSerial('[CONFIG] ✗ Serial error: ' + err.message);
-                logSerial('========================================\n');
-                reject(err);
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[CONFIG] ✗ Serial error: ' + err.message);
+                    logSerial('========================================\n');
+                    cleanup();
+                    reject(err);
+                }
             });
         });
     } catch (error) {
