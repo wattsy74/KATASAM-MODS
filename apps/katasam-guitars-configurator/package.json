@@ -1,7 +1,7 @@
 {
   "name": "katasam-guitars-configurator",
   "productName": "KATASAM Configurator",
-  "version": "5.0.1",
+  "version": "5.0.2",
   "main": "main.js",
   "description": "KATASAM Configurator",
   "author": "Martyn L. Watts",

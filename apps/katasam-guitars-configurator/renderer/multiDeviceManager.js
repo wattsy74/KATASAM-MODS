@@ -1215,6 +1215,164 @@ class MultiDeviceManager {
         return selectedBumblegumPaths.has(port.path);
       });
 
+      // Final Windows safety pass:
+      // Each physical guitar device may expose two COM ports.
+      // Use a real protocol handshake to pick the working endpoint, and only use
+      // COM ordering as a final fallback.
+      if (process.platform === 'win32') {
+        const getWindowsComNumber = (portPath) => {
+          const match = String(portPath || '').match(/COM(\d+)/i);
+          return match ? parseInt(match[1], 10) : -1;
+        };
+        const getWindowsVidPid = (port) => {
+          const pnpId = String(port.pnpId || '');
+          const pnpVidPid = pnpId.match(/VID_([0-9A-F]{4}).*PID_([0-9A-F]{4})/i);
+          if (pnpVidPid) return `${pnpVidPid[1].toLowerCase()}:${pnpVidPid[2].toLowerCase()}`;
+
+          const vendor = String(port.vendorId || '').replace(/^0x/i, '').toLowerCase();
+          const product = String(port.productId || '').replace(/^0x/i, '').toLowerCase();
+          return (vendor && product) ? `${vendor}:${product}` : '';
+        };
+        const getPairGroupKey = (port) => {
+          const serial = String(port.serialNumber || '').trim().toLowerCase();
+          if (serial) return `serial:${serial}`;
+
+          // Prefer VID/PID grouping so twin interfaces with mismatched metadata
+          // (e.g. one with PNP details and one generic USB serial entry) still
+          // collapse into a single device pair.
+          const vidPid = getWindowsVidPid(port);
+          if (vidPid) return `vp:${vidPid}`;
+
+          const pnpBase = String(port.pnpId || '').replace(/&mi_[0-9a-f]{2}/i, '').toLowerCase();
+          if (pnpBase) return `pnp:${pnpBase}`;
+
+          const location = String(port.locationId || '').trim().toLowerCase();
+          if (location) return `loc:${location}`;
+
+          return `path:${String(port.path || '').toLowerCase()}`;
+        };
+        const handshakeScoreCache = new Map();
+        const getWindowsPortHandshakeScore = async (port) => {
+          const path = String(port.path || '').trim();
+          if (handshakeScoreCache.has(path)) {
+            return handshakeScoreCache.get(path);
+          }
+
+          // Already-connected ports are trusted and should win over unopened siblings.
+          if (this.connectedDevices.has(path)) {
+            handshakeScoreCache.set(path, 100);
+            return 100;
+          }
+
+          try {
+            const probeName = await this.tryGetDeviceNameBeforeConnection({ path });
+            // Explicit non-empty name is strongest signal; "Unknown" still means
+            // firmware protocol responded correctly.
+            if (probeName && probeName !== 'Unknown') {
+              handshakeScoreCache.set(path, 90);
+              return 90;
+            }
+            if (probeName === 'Unknown') {
+              handshakeScoreCache.set(path, 70);
+              return 70;
+            }
+          } catch (_err) {
+            // fall through to 0
+          }
+
+          handshakeScoreCache.set(path, 0);
+          return 0;
+        };
+
+        const windowsPorts = guitarDevices.filter((port) => /^COM\d+$/i.test(String(port.path || '').trim()));
+        const pairGroups = new Map();
+
+        for (const port of windowsPorts) {
+          const key = getPairGroupKey(port);
+          if (!pairGroups.has(key)) pairGroups.set(key, []);
+          pairGroups.get(key).push(port);
+        }
+
+        const keepPaths = new Set();
+        for (const [groupKey, groupedPorts] of pairGroups.entries()) {
+          const sorted = groupedPorts
+            .slice()
+            .sort((a, b) => getWindowsComNumber(a.path) - getWindowsComNumber(b.path));
+
+          // Choose one port per adjacent pair, preferring handshake response over COM number.
+          for (let i = 0; i < sorted.length; i += 2) {
+            const low = sorted[i];
+            const high = sorted[i + 1];
+            let selected = high || low;
+
+            if (low && high) {
+              const lowScore = await getWindowsPortHandshakeScore(low);
+              const highScore = await getWindowsPortHandshakeScore(high);
+              if (lowScore > highScore) {
+                selected = low;
+              } else if (highScore > lowScore) {
+                selected = high;
+              } else {
+                // Tie-breaker: keep higher COM for deterministic behavior.
+                selected = getWindowsComNumber(high.path) >= getWindowsComNumber(low.path) ? high : low;
+              }
+            }
+
+            if (selected) keepPaths.add(selected.path);
+          }
+
+          console.log(
+            `[MultiDeviceManager] Windows pair dedupe ${groupKey}: ${sorted.map(p => p.path).join(', ')} -> keeping ${Array.from(keepPaths).filter(p => sorted.some(s => s.path === p)).join(', ')}`
+          );
+        }
+
+        guitarDevices = guitarDevices.filter((port) => {
+          const path = String(port.path || '').trim();
+          if (!/^COM\d+$/i.test(path)) return true;
+          return keepPaths.has(path);
+        });
+
+        // Absolute fallback: if duplicates survive grouping, still collapse adjacent COM
+        // pairs, but keep the endpoint that responds to protocol probing.
+        const remainingWindowsPorts = guitarDevices.filter((port) => /^COM\d+$/i.test(String(port.path || '').trim()));
+        if (remainingWindowsPorts.length >= 2) {
+          const sortedByCom = remainingWindowsPorts
+            .slice()
+            .sort((a, b) => getWindowsComNumber(a.path) - getWindowsComNumber(b.path));
+
+          const globalKeepPaths = new Set();
+          for (let i = 0; i < sortedByCom.length; i += 2) {
+            const low = sortedByCom[i];
+            const high = sortedByCom[i + 1];
+            let selected = high || low;
+
+            if (low && high) {
+              const lowScore = await getWindowsPortHandshakeScore(low);
+              const highScore = await getWindowsPortHandshakeScore(high);
+              if (lowScore > highScore) {
+                selected = low;
+              } else if (highScore > lowScore) {
+                selected = high;
+              } else {
+                selected = getWindowsComNumber(high.path) >= getWindowsComNumber(low.path) ? high : low;
+              }
+            }
+
+            if (selected) globalKeepPaths.add(selected.path);
+          }
+
+          console.log(
+            `[MultiDeviceManager] Global Windows COM fallback: ${sortedByCom.map(p => p.path).join(', ')} -> keeping ${Array.from(globalKeepPaths).join(', ')}`
+          );
+
+          guitarDevices = guitarDevices.filter((port) => {
+            const path = String(port.path || '').trim();
+            if (!/^COM\d+$/i.test(path)) return true;
+            return globalKeepPaths.has(path);
+          });
+        }
+      }
+
       console.log('[MultiDeviceManager] Filtered guitarDevices:', guitarDevices);
       // Log device map population
       const newDevices = new Map();
