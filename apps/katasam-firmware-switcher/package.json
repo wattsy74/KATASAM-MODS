@@ -1,9 +1,10 @@
 {
   "name": "katasam-firmware-switcher",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "KATASAM Switcher - Switch between Classic and Santroller firmware",
   "main": "main.js",
   "scripts": {
+    "postinstall": "electron-rebuild",
     "start": "electron .",
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
@@ -23,7 +24,8 @@
   },
   "devDependencies": {
     "electron": "^28.3.3",
-    "electron-builder": "^24.9.1"
+    "electron-builder": "^24.9.1",
+    "@electron/rebuild": "^4.0.4"
   },
   "build": {
     "appId": "com.katasam.firmwareswitcher",

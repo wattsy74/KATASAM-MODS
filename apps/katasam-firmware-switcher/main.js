@@ -34,9 +34,14 @@ async function copyFileWithRetries(src, dest, attempts = 8, delayMs = 300) {
     // Helper to check destination directory exists and is writable
     function destWritable(destPath) {
         try {
-            const root = path.parse(destPath).root; // e.g., 'D:\'
-            // Check that root exists and is writable
-            fs.accessSync(root, fs.constants.W_OK);
+            const destDir = path.dirname(destPath);
+            // Check that destination directory exists and is writable.
+            // On macOS/Linux BOOTSEL paths are mounted under /Volumes/... and
+            // checking filesystem root (/) gives false negatives.
+            if (!fs.existsSync(destDir)) {
+                return false;
+            }
+            fs.accessSync(destDir, fs.constants.W_OK);
             return true;
         } catch (e) {
             return false;
@@ -118,16 +123,17 @@ async function waitForBootselMount(bootselPath, timeoutMs = 20000) {
             }
 
             // List entries for diagnostics
+            let foundMarker = false;
             try {
                 const entries = fs.readdirSync(bootselPath);
                 console.log('[MOUNT] Directory entries at', bootselPath, ':', entries.join(', '));
                 logSerial('[MOUNT] Directory entries at ' + bootselPath + ': ' + entries.join(', '));
-                // If any marker files present consider it mounted
                 for (const m of markers) {
                     if (entries.includes(m)) {
                         console.log('[MOUNT] Found marker file:', m);
                         logSerial('[MOUNT] Found marker file: ' + m);
-                        return true;
+                        foundMarker = true;
+                        break;
                     }
                 }
             } catch (e) {
@@ -135,14 +141,19 @@ async function waitForBootselMount(bootselPath, timeoutMs = 20000) {
                 logSerial('[MOUNT] Could not list directory yet: ' + e.message);
             }
 
-            // Check writability
+            // Always require writability before declaring ready — marker files only
+            // prove the volume is readable, not that new files can be written.
             try {
                 fs.accessSync(bootselPath, fs.constants.W_OK);
                 console.log('[MOUNT] Destination root writable:', bootselPath);
                 logSerial('[MOUNT] Destination root writable: ' + bootselPath);
                 return true;
             } catch (e) {
-                // Not writable yet
+                if (foundMarker) {
+                    console.log('[MOUNT] Marker found but not writable yet, waiting...');
+                    logSerial('[MOUNT] Marker found but not writable yet, waiting...');
+                }
+                // Not writable yet — keep polling
             }
 
             await sleep(300);
@@ -184,8 +195,13 @@ function readCachedHardwareVersion() {
             return null;
         }
 
+        const normalizedVersion = normalizeHardwareVersion(parsed.version);
+        if (!normalizedVersion) {
+            return null;
+        }
+
         return {
-            version: normalizeHardwareVersion(parsed.version),
+            version: normalizedVersion,
             source: parsed.source || 'cache',
             updatedAt: parsed.updatedAt || null
         };
@@ -197,6 +213,11 @@ function readCachedHardwareVersion() {
 
 function writeCachedHardwareVersion(version, source) {
     const normalized = normalizeHardwareVersion(version);
+    if (!normalized) {
+        console.warn('[VERSION] Refusing to cache invalid hardware version:', version);
+        return null;
+    }
+
     try {
         const payload = {
             version: normalized,
@@ -217,9 +238,12 @@ function readHardwareVersionFromBootselOrCache(bootselPath) {
 
     if (fs.existsSync(versionFile)) {
         const fileVersion = normalizeHardwareVersion(fs.readFileSync(versionFile, 'utf-8').trim());
-        writeCachedHardwareVersion(fileVersion, 'bootsel-file');
-        console.log('[VERSION] ✓ Found hardware version in BOOTSEL file:', fileVersion);
-        return { success: true, version: fileVersion, source: 'bootsel-file' };
+        if (fileVersion) {
+            writeCachedHardwareVersion(fileVersion, 'bootsel-file');
+            console.log('[VERSION] ✓ Found hardware version in BOOTSEL file:', fileVersion);
+            return { success: true, version: fileVersion, source: 'bootsel-file' };
+        }
+        console.log('[VERSION] hardware_version.txt found but contained invalid value; falling back to cache');
     }
 
     const cached = readCachedHardwareVersion();
@@ -263,18 +287,20 @@ function parseHardwareVersionFromText(text) {
 // Firmware URLs - v1 (pin 23) vs v2 (pin 13) hardware variants
 const FIRMWARE_URLS = {
     // Classic firmware variants
-    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v1.uf2',
-    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Classic-v2.uf2',
+    'Classic-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v1.uf2',
+    'Classic-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Classic-v2.uf2',
     
     // Santroller firmware variants
-    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv1.uf2',
-    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/download/downloads/Guitarv2.uf2'
+    'Santroller-v1': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv1.uf2',
+    'Santroller-v2': 'https://github.com/wattsy74/KATASAM-MODS/releases/latest/download/Guitarv2.uf2'
 };
 
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: 800,
-        height: 700,
+        width: 980,
+        height: 860,
+        minWidth: 900,
+        minHeight: 820,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
@@ -483,15 +509,24 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
         logSerial('[SERIAL] Port path: ' + portPath);
         logSerial('[SERIAL] Opening serial port at 115200 baud...');
         
-        const port = new SerialPort({ path: portPath, baudRate: 115200 });
+        const port = new SerialPort({ 
+            path: portPath, 
+            baudRate: 115200,
+            lock: false  // Don't lock the port exclusively on macOS
+        });
         
         return new Promise((resolve, reject) => {
+            let resolved = false;
+            
             const timeout = setTimeout(() => {
-                logSerial('[SERIAL] ✗ Timeout opening serial port');
-                try {
-                    port.close();
-                } catch (e) {}
-                reject(new Error('Timeout opening serial port'));
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[SERIAL] ✗ Timeout opening serial port');
+                    try {
+                        port.close();
+                    } catch (e) {}
+                    reject(new Error('Timeout opening serial port'));
+                }
             }, 5000);
             
             port.on('open', () => {
@@ -502,18 +537,28 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
                 port.write('REBOOTBOOTSEL\n', (err) => {
                     if (err) {
                         logSerial('[SERIAL] ✗ Failed to write command: ' + err.message);
-                        port.close();
-                        reject(err);
+                        if (!resolved) {
+                            resolved = true;
+                            try {
+                                port.close();
+                            } catch (e) {}
+                            reject(err);
+                        }
                     } else {
                         logSerial('[SERIAL] ✓ Command sent successfully');
                         logSerial('[SERIAL] Waiting 1 second for device to process...');
                         
                         setTimeout(() => {
                             logSerial('[SERIAL] ✓ Closing serial port');
-                            port.close();
-                            logSerial('[SERIAL] 🎉 Classic device should be entering BOOTSEL mode!');
-                            logSerial('========================================\n');
-                            resolve({ success: true });
+                            if (!resolved) {
+                                resolved = true;
+                                try {
+                                    port.close();
+                                } catch (e) {}
+                                logSerial('[SERIAL] 🎉 Classic device should be entering BOOTSEL mode!');
+                                logSerial('========================================\n');
+                                resolve({ success: true });
+                            }
                         }, 1000);
                     }
                 });
@@ -521,9 +566,15 @@ ipcMain.handle('reset-classic-serial', async (event, portPath) => {
             
             port.on('error', (err) => {
                 clearTimeout(timeout);
-                logSerial('[SERIAL] ✗ Serial port error: ' + err.message);
-                logSerial('========================================\n');
-                reject(err);
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[SERIAL] ✗ Serial port error: ' + err.message);
+                    logSerial('========================================\n');
+                    try {
+                        port.close();
+                    } catch (e) {}
+                    reject(err);
+                }
             });
         });
     } catch (error) {
@@ -838,7 +889,7 @@ ipcMain.handle('start-flash-with-version-detection', async (event, targetFirmwar
                         }
 
                         // Use retrying copy helper for robustness
-                        await copyFileWithRetries(firmwarePath, destPath, 3, 500);
+                        await copyFileWithRetries(firmwarePath, destPath, 10, 500);
                         
                         const destStats = fs.statSync(destPath);
                         console.log(`[COPY] Copied ${destStats.size} bytes`);
@@ -1356,23 +1407,43 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
         logSerial('========================================');
         logSerial('[CONFIG] Port path: ' + portPath);
         
-        const port = new SerialPort({ path: portPath, baudRate: 115200 });
+        const port = new SerialPort({ 
+            path: portPath, 
+            baudRate: 115200,
+            lock: false  // Don't lock the port exclusively on macOS
+        });
         
         return new Promise((resolve, reject) => {
             let buffer = '';
             let inFile = false;
             let fileContent = [];
+            let resolved = false;
+            let dataReceived = false;
+            
             const timeout = setTimeout(() => {
-                logSerial('[CONFIG] ✗ Timeout reading config');
+                logSerial('[CONFIG] ✗ Timeout reading config (no data received in 15s)');
+                if (!dataReceived) {
+                    logSerial('[CONFIG] ⚠️  No data received at all - device may not be responding');
+                }
+                resolved = true;
                 try {
                     port.close();
                 } catch (e) {}
                 reject(new Error('Timeout reading config'));
-            }, 10000);
+            }, 15000);
+            
+            const cleanup = () => {
+                clearTimeout(timeout);
+                try {
+                    port.close();
+                } catch (e) {}
+            };
             
             port.on('data', (data) => {
+                dataReceived = true;
                 const chunk = data.toString('utf-8');
                 buffer += chunk;
+                logSerial('[CONFIG] Data chunk received (' + chunk.length + ' bytes)');
                 
                 const lines = buffer.split('\n');
                 buffer = lines.pop(); // Keep incomplete line in buffer
@@ -1385,7 +1456,16 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
                         inFile = true;
                         fileContent = [];
                         logSerial('[CONFIG] ✓ Started receiving config.json');
-                    } else if (trimmed === 'END_config.json') {
+                    } else if (trimmed.includes('END_config.json')) {
+                        // Handle case where END marker arrives on same line as JSON data
+                        const endIndex = trimmed.indexOf('END_config.json');
+                        if (endIndex > 0) {
+                            const jsonPart = trimmed.substring(0, endIndex).trim();
+                            if (jsonPart) {
+                                fileContent.push(jsonPart);
+                            }
+                        }
+                        
                         clearTimeout(timeout);
                         logSerial('[CONFIG] ✓ Finished receiving config.json');
                         
@@ -1411,12 +1491,15 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
                             writeCachedHardwareVersion(version, 'classic-config');
                             
                             logSerial('========================================\n');
-                            port.close();
+                            resolved = true;
+                            cleanup();
                             resolve({ success: true, version: version, config: config });
                         } catch (e) {
                             logSerial('[CONFIG] ✗ Failed to parse JSON: ' + e.message);
+                            logSerial('[CONFIG] JSON length: ' + fileContent.join('\n').length);
                             logSerial('========================================\n');
-                            port.close();
+                            resolved = true;
+                            cleanup();
                             reject(new Error('Failed to parse config.json: ' + e.message));
                         }
                         return;
@@ -1427,16 +1510,35 @@ ipcMain.handle('read-classic-config', async (event, portPath) => {
             });
             
             port.on('open', () => {
-                logSerial('[CONFIG] ✓ Serial port opened');
-                logSerial('[CONFIG] Sending READFILE:config.json command');
-                port.write('READFILE:config.json\n');
+                logSerial('[CONFIG] ✓ Serial port opened successfully');
+                logSerial('[CONFIG] Waiting 500ms for device to be ready...');
+                
+                // Small delay to allow device to stabilize after port open
+                setTimeout(() => {
+                    logSerial('[CONFIG] Sending READFILE:config.json command');
+                    try {
+                        port.write('READFILE:config.json\n');
+                        logSerial('[CONFIG] ✓ Command write call succeeded');
+                    } catch (e) {
+                        if (!resolved) {
+                            resolved = true;
+                            logSerial('[CONFIG] ✗ Failed to write command: ' + e.message);
+                            logSerial('========================================\n');
+                            cleanup();
+                            reject(e);
+                        }
+                    }
+                }, 500);
             });
             
             port.on('error', (err) => {
-                clearTimeout(timeout);
-                logSerial('[CONFIG] ✗ Serial error: ' + err.message);
-                logSerial('========================================\n');
-                reject(err);
+                if (!resolved) {
+                    resolved = true;
+                    logSerial('[CONFIG] ✗ Serial error: ' + err.message);
+                    logSerial('========================================\n');
+                    cleanup();
+                    reject(err);
+                }
             });
         });
     } catch (error) {

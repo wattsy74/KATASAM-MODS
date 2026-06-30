@@ -604,6 +604,62 @@ select option:disabled {
   font-weight: bold;
 }
 
+.user-preset-radio {
+  margin-top: 12px;
+  width: 220px;
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.user-preset-slot-btn {
+  width: 31px;
+  height: 31px;
+  border-radius: 999px;
+  border: 2px solid #28D0AF;
+  background: #222;
+  color: #d9d9d9;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.12s ease;
+}
+
+.user-preset-slot-btn:hover {
+  transform: translateY(-1px);
+}
+
+.user-preset-slot-btn:disabled,
+.user-preset-slot-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.user-preset-slot-btn.has-data {
+  color: #fff;
+}
+
+.user-preset-slot-btn.selected,
+.user-preset-slot-btn.saving {
+  background: #28D0AF;
+  color: #222;
+  border-color: #28D0AF;
+}
+
+.user-preset-slot-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(40, 208, 175, 0.35);
+}
+
+.user-preset-hint {
+  margin-top: 8px;
+  width: 220px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #9fa8b2;
+}
+
 /* Fret and strum areas */
 .fret-area,
 .strum-area {
@@ -912,6 +968,53 @@ select option:disabled {
 #hexInput:focus {
   border-color: #28D0AF;
   color: #28D0AF;
+}
+
+/* Normalize text input focus styling across modals/forms to avoid browser yellow rings. */
+#passcode-input,
+#rename-input,
+#preset-name,
+#preset-author,
+#preset-description,
+#whammy-min-val,
+#whammy-max-val,
+.pin-input,
+.led-input {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+#passcode-input:focus,
+#rename-input:focus,
+#preset-name:focus,
+#preset-author:focus,
+#preset-description:focus,
+#whammy-min-val:focus,
+#whammy-max-val:focus,
+.pin-input:focus,
+.led-input:focus {
+  outline: none !important;
+  border-color: #28D0AF !important;
+  box-shadow: 0 0 0 2px rgba(93, 227, 203, 0.25) !important;
+}
+
+/* Prevent Chromium autofill yellow background/border from clashing with app theme. */
+#passcode-input:-webkit-autofill,
+#passcode-input:-webkit-autofill:hover,
+#passcode-input:-webkit-autofill:focus,
+#rename-input:-webkit-autofill,
+#rename-input:-webkit-autofill:hover,
+#rename-input:-webkit-autofill:focus,
+#preset-name:-webkit-autofill,
+#preset-name:-webkit-autofill:hover,
+#preset-name:-webkit-autofill:focus,
+#preset-author:-webkit-autofill,
+#preset-author:-webkit-autofill:hover,
+#preset-author:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  box-shadow: 0 0 0 1000px #222 inset !important;
+  transition: background-color 9999s ease-out 0s;
+  border-color: #28D0AF !important;
 }
 
 /* Diagnostics Modal Styles */
@@ -1321,7 +1424,7 @@ select option:disabled {
 }
 
 /* Enhanced tooltip styling for button config */
-[title] {
+.tooltip-cell[title] {
   position: relative;
   cursor: help;
 }

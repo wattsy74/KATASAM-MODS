@@ -280,10 +280,10 @@ Notes
 
 ---
 
-### [ ] FEAT-003 User input hardware version detection
+### [x] FEAT-003 User input hardware version detection
 
 Priority: Medium
-Status: In Progress
+Status: Done
 
 Change request
 - When a device has just been flashed have the user press the middle fret button to ascertain the hardware version and apply the correct default config.
@@ -297,16 +297,20 @@ Definition of done
 
 Test checklist
 - [x] Flash a device and confirm the hardware version detection prompt appears after reconnect.
-- [ ] Press the middle fret button on V1 hardware and confirm V1 defaults are selected.
-- [ ] Press the middle fret button on V2 hardware and confirm V2 defaults are selected.
-- [ ] Confirm timeout/failure path offers manual choice or cancellation.
-- [ ] Confirm applied defaults persist after config write/reboot.
-- [ ] Confirm detection does not trigger during normal app startup unless the device was just flashed.
+- [x] Press the middle fret button on V1 hardware and confirm V1 defaults are selected.
+- [x] Press the middle fret button on V2 hardware and confirm V2 defaults are selected.
+- [x] Confirm timeout/failure path offers manual choice or cancellation.
+- [x] Confirm applied defaults persist after config write/reboot.
+- [x] Confirm detection does not trigger during normal app startup unless the device was just flashed.
 
 Notes
 - 2026-06-20: Needs integration point after FEAT-002 flash/reconnect flow. Middle fret should be treated as the hardware-version signal source before default config selection.
 - 2026-06-20: Added shared hardware-defaults detection flow and wired it into post-flash reconnect/auto-connect path. It now prompts for middle-fret hardware confirmation, applies V1/V2 defaults to session, and exposes Apply To Config for persistence.
 - 2026-06-20: Timing of the prompt was 90sec plus, shortened but now in between the initial setup and the determination was wrong at that point said v1 hardware when it should be v2
+- 2026-06-24: Fixed timing bug (part 1) - removed unreliable YELLOW_FRET fallback, now only trusts LEFT (V2) and TILT (V1) hardware pin states; added 500ms stabilization delay
+- 2026-06-24: Fixed double-reboot timing issue (part 2) - keep polling through device reboot cycle, trigger detection only on second reconnect after 1500ms config load time
+- 2026-06-24: Fixed polling stop issue (part 3) - polling was stopping too early on first connect, preventing detection of second reboot; now continues polling through full reboot cycle with extended 15s timeout
+- 2026-06-24: Finalized FEAT-003 as Done. Post-flash detection now reuses the working diagnostics polling path, waits for device files/config readiness, delays modal by 10s in post-flash context, suppresses repeat BOOTSEL prompt for 60s after user confirmation, and auto-applies detected defaults to config with reboot/reload.
 
 ---
 
@@ -366,6 +370,42 @@ Notes
 - 2026-06-20: Intended to replace the old Rename Device flow with the safer Config Editor config-save path.
 - 2026-06-22: Restarted FEAT-005 from the current clean renderer state. Added `device_name` to Config Editor with validation, and removed only the Rename Device menu item to avoid destabilizing the legacy modal code.
 - 2026-06-22: User validation completed successfully, so FEAT-005 is done with the menu-only removal scope.
+
+---
+
+### [ ] FEAT-006 On-device switchable user presets (6 slots)
+
+Priority: High
+Status: In Progress
+
+Change request
+- Add six on-device user preset slots that can be populated from the app and saved on the controller.
+- Add firmware-side preset switching mode entered by long-pressing Guide.
+- In switching mode, D-pad left/right cycles through the six slots, and Start sets the selected slot as default and exits switching mode.
+
+Definition of done
+- App can read/write all six user preset slots (`User 1` to `User 6`) to device storage.
+- Firmware supports long-press Guide to enter/exit preset switching mode.
+- Firmware supports D-pad left/right slot navigation with visible feedback.
+- Firmware supports Start to persist selected slot as default and apply it.
+- Default selected slot is restored on boot and reflected in runtime behavior.
+- Backward compatibility: devices without FEAT-006 firmware continue to work with existing preset flows.
+
+Test checklist
+- [x] Save colors from app into each slot `User 1` through `User 6` and verify values persist after reconnect.
+- [ ] Enter switching mode using Guide long-press and confirm normal gameplay input is gated while active.
+- [ ] Press D-pad left/right in switching mode and confirm slot index changes with wraparound.
+- [ ] Press Start in switching mode and confirm selected slot is applied and saved as default.
+- [ ] Reboot device and verify last saved default slot is automatically active.
+- [ ] Verify legacy firmware (without switching commands) does not crash app and shows graceful fallback behavior.
+
+Notes
+- 2026-06-23: Initial scope captured from user request; requires coordinated firmware + configurator changes.
+- 2026-06-23: App-side preparation started by enabling six user slots in renderer validation/dropdown handling.
+- 2026-06-24: Replaced ambiguous user preset dropdown/update flow with six dedicated slot buttons (`1..6`) in a radio-style row.
+- 2026-06-24: Implemented explicit slot interactions in app UI: short click loads slot, long-press (700ms) saves current colours to that slot.
+- 2026-06-24: Added clarity and safety UX updates: selecting a user slot resets factory preset dropdown to `Select preset...`, and slot buttons remain disabled until a device is connected.
+- 2026-06-24: User validation confirmed slot data remains readable in the UI after disconnect/reconnect.
 
 ---
 

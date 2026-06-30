@@ -40,7 +40,7 @@
             <button id="button-config-btn" style="display:none">Button Config</button>
             <input type="file" id="presets-file-input" accept=".json" style="display:none" />
             <button id="check-updates-btn">Check for App Updates</button>
-            <button id="reboot-to-bootsel">Reflash Firmware &#128274;</button>
+            <button id="reboot-to-bootsel">BOOTSEL Mode</button>
           </div>
         </div>
       </div>
@@ -151,10 +151,15 @@
             <select id="preset-select" class="preset-dropdown">
               
             </select>
-            <select id="user-preset-select" class="preset-dropdown">
-              
-            </select>
-            <button id="save-custom-btn" class="text-button" style="display: none;">Save changes</button>
+            <div id="user-preset-radio" class="user-preset-radio" aria-label="User preset slots">
+              <button type="button" class="user-preset-slot-btn" data-slot="User 1" aria-label="User preset slot 1">1</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 2" aria-label="User preset slot 2">2</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 3" aria-label="User preset slot 3">3</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 4" aria-label="User preset slot 4">4</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 5" aria-label="User preset slot 5">5</button>
+              <button type="button" class="user-preset-slot-btn" data-slot="User 6" aria-label="User preset slot 6">6</button>
+            </div>
+            <div id="user-preset-hint" class="user-preset-hint">Tap a slot to load. Hold to save current colors.</div>
           </div>
         </div>
       </div>
@@ -205,16 +210,20 @@
 
   <div id="passcode-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
   <div style="background:#222; padding:2em; border-radius:1em; min-width:400px; text-align:center; color:#fff; box-shadow:0 0 20px #000;">
-    <h3 style="margin-top:0; color:#28D0AF; font-size:1.4em;">Enter passcode to reflash firmware</h3>
-    <div style="background: #ff5722; color: white; padding: 12px; border-radius: 4px; margin: 15px 0; font-size: 13px; text-align: left;">
-        <strong>⚠️ WARNING:</strong> This will put the device into BOOTSEL mode for manual firmware flashing. Do not disconnect the device during this process as it may render it unusable and require manual recovery.
-    </div>
-    <input type="password" id="passcode-input" style="width:80%; font-size:1.2em; padding:10px; border-radius:8px; border:1px solid #444; background:#333; color:#fff; margin:1em 0;" autofocus />
+    <h3 style="margin-top:0; color:#28D0AF; font-size:1.4em;">Enter BOOTSEL Mode</h3>
+    <p style="margin: 15px 0; font-size: 14px; line-height: 1.45; text-align: left; color: #ddd;">
+      This command reboots your controller into <strong>BOOTSEL mode</strong>, which is the RP2040 firmware update mode.
+      Use this when you want to flash firmware.
+    </p>
+    <p style="margin: 10px 0 0 0; font-size: 13px; text-align: left; color: #b5b5b5;">
+      To confirm, type <strong>BOOTSEL</strong> below and click OK.
+    </p>
+    <input type="text" id="passcode-input" placeholder="Type BOOTSEL" style="width:80%; font-size:1.1em; padding:10px; border-radius:8px; border:1px solid #444; background:#333; color:#fff; margin:1em 0;" autofocus />
     <div style="margin-top:1.5em; display:flex; gap:15px; justify-content:center;">
       <button id="passcode-ok" class="modal-btn">OK</button>
       <button id="passcode-cancel" class="modal-btn">Cancel</button>
     </div>
-    <div id="passcode-error" style="color:#ff6b6b; margin-top:1em; display:none;">Incorrect passcode.</div>
+    <div id="passcode-error" style="color:#ff6b6b; margin-top:1em; display:none;">Please type BOOTSEL exactly to continue.</div>
   </div>
 </div>
 
