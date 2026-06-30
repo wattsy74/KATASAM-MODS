@@ -79,7 +79,7 @@ case "$PLATFORM" in
         echo "Target architecture: $ARTIFACT_HINT"
         echo ""
 
-        npx electron-builder --mac dmg zip $EB_ARCH_FLAG
+        npm run make:mac -- $EB_ARCH_FLAG
         
         if [ $? -eq 0 ]; then
             echo ""
@@ -103,7 +103,7 @@ case "$PLATFORM" in
         else
             echo "⚠️  DMG build failed, retrying with ZIP-only fallback..."
             echo ""
-            npx electron-builder --mac zip $EB_ARCH_FLAG
+            npm run build:mac:zip -- $EB_ARCH_FLAG
             if [ $? -eq 0 ]; then
                 echo ""
                 echo "✅ macOS ZIP build complete (fallback mode)!"

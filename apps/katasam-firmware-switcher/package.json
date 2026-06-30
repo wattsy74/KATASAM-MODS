@@ -6,14 +6,19 @@
   "scripts": {
     "postinstall": "electron-rebuild",
     "start": "electron .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac",
-    "build:mac:arm64": "electron-builder --mac --arm64",
-    "build:mac:x64": "electron-builder --mac --x64",
-    "build:mac:zip": "electron-builder --mac zip",
-    "build:win": "electron-builder --win --x64",
-    "build:linux": "electron-builder --linux",
-    "build:all": "electron-builder --mac --win --linux"
+    "package": "npx -y node@20 ./node_modules/electron-builder/cli.js --dir",
+    "make": "npx -y node@20 ./node_modules/electron-builder/cli.js",
+    "make:mac": "npm run make -- --mac",
+    "make:win": "npm run make -- --win --x64",
+    "make:linux": "npm run make -- --linux",
+    "build": "npm run build:mac",
+    "build:mac": "npm run make:mac",
+    "build:mac:arm64": "npm run make:mac -- --arm64",
+    "build:mac:x64": "npm run make:mac -- --x64",
+    "build:mac:zip": "npm run make -- --mac zip",
+    "build:win": "npm run make:win",
+    "build:linux": "npm run make:linux",
+    "build:all": "npm run make -- --mac --win --linux"
   },
   "author": "Martyn Watts",
   "license": "MIT",
@@ -23,7 +28,7 @@
     "usb": "^2.17.0"
   },
   "devDependencies": {
-    "electron": "^28.3.3",
+    "electron": "^42.5.1",
     "electron-builder": "^24.9.1",
     "@electron/rebuild": "^4.0.4"
   },
