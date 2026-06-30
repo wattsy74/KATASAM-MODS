@@ -12,7 +12,7 @@
     "build": "npm run build:mac",
     "build:mac": "npm run make:mac && node scripts/sync-dist-artifacts.js",
     "build:win": "npm run make -- --platform win32 && node scripts/sync-dist-artifacts.js",
-    "rebuild:mac:dmg": "npx -y node@20 /usr/local/bin/npm rebuild macos-alias",
+    "rebuild:mac:dmg": "npm rebuild macos-alias",
     "make:mac:zip": "electron-forge make --platform darwin --targets=@electron-forge/maker-zip",
     "make:mac:dmg": "npm run rebuild:mac:dmg && electron-forge make --platform darwin --targets=@electron-forge/maker-dmg",
     "rename:mac:artifacts": "node scripts/rename-mac-artifacts.js",
