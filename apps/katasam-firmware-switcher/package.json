@@ -28,7 +28,7 @@
     "usb": "^2.17.0"
   },
   "devDependencies": {
-    "electron": "^42.5.1",
+    "electron": "^37.10.3",
     "electron-builder": "^24.9.1",
     "@electron/rebuild": "^4.0.4"
   },
