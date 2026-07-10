@@ -66,6 +66,7 @@ cd firmware-rust
 python3 -m pip install --user hid
 ./scripts/capture_hid_fixtures.py --vid 0x6997 --pid 0xB528
 ./scripts/check_hid_fixtures.sh
+./scripts/analyze_hid_fixtures.py
 ```
 
 See `fixtures/hid/HID_CAPTURE_WORKFLOW.md` for capture expectations.

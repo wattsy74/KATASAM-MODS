@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - firmware-rebuild-native-xbox-ps-support
+      - firmware-hid-parity-ci-and-analysis
 
 jobs:
   parity:
@@ -29,3 +30,9 @@ jobs:
 
       - name: Replay all real-capture fixtures
         run: ./scripts/replay_all_real_capture_fixtures.sh
+
+      - name: Check HID fixtures
+        run: ./scripts/check_hid_fixtures.sh
+
+      - name: Analyze HID fixtures
+        run: ./scripts/analyze_hid_fixtures.py
