@@ -39,6 +39,7 @@ dependencies = [
  "config-runtime",
  "firmware-core",
  "platform-profiles",
+ "serde_json",
 ]
 
 [[package]]

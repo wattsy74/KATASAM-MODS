@@ -13,6 +13,13 @@ const MOCK_UID: &str = "RUSTSIM-0001";
 pub struct Runtime {
     engine: ProtocolEngine,
     files: BTreeMap<String, String>,
+    identity_version: String,
+    identity_device_name: Option<String>,
+    identity_uid: String,
+    whammy_value: i32,
+    joystick_x: i32,
+    joystick_y: i32,
+    pin_reads: BTreeMap<String, String>,
     active_write_path: Option<String>,
     write_is_streaming: bool,
     write_lines: Vec<String>,
@@ -21,7 +28,45 @@ pub struct Runtime {
 
 impl Runtime {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            identity_version: RUNTIME_VERSION.to_string(),
+            identity_device_name: None,
+            identity_uid: MOCK_UID.to_string(),
+            whammy_value: -1,
+            joystick_x: -1,
+            joystick_y: -1,
+            pin_reads: BTreeMap::new(),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_identity(mut self, version: &str, device_name: &str, uid: &str) -> Self {
+        if !version.trim().is_empty() {
+            self.identity_version = version.trim().to_string();
+        }
+        if !device_name.trim().is_empty() {
+            self.identity_device_name = Some(device_name.trim().to_string());
+        }
+        if !uid.trim().is_empty() {
+            self.identity_uid = uid.trim().to_string();
+        }
+        self
+    }
+
+    pub fn with_controls(mut self, whammy_value: i32, joystick_x: i32, joystick_y: i32) -> Self {
+        self.whammy_value = whammy_value;
+        self.joystick_x = joystick_x;
+        self.joystick_y = joystick_y;
+        self
+    }
+
+    pub fn with_pin_read(mut self, name: &str, value: &str) -> Self {
+        let key = name.trim();
+        let val = value.trim();
+        if !key.is_empty() && !val.is_empty() {
+            self.pin_reads.insert(key.to_string(), val.to_string());
+        }
+        self
     }
 
     pub fn with_file(mut self, path: &str, content: &str) -> Self {
@@ -55,12 +100,12 @@ impl Runtime {
     fn handle_command(&mut self, cmd: Command<'_>, out: &mut Vec<String>) {
         match cmd {
             Command::Ready => out.push("FIRMWARE_READY:OK\n".to_string()),
-            Command::ReadVersion => out.push(format!("VERSION:{}\nEND\n", RUNTIME_VERSION)),
+            Command::ReadVersion => out.push(format!("VERSION:{}\nEND\n", self.identity_version)),
             Command::ReadDeviceName => {
                 let name = self.read_device_name();
                 out.push(format!("{}\nEND\n", name));
             }
-            Command::ReadUid => out.push(format!("{}\nEND\n", MOCK_UID)),
+            Command::ReadUid => out.push(format!("{}\nEND\n", self.identity_uid)),
             Command::ReadFile { path } => self.read_file(path, out),
             Command::WriteFile { path } => self.start_write(path, out),
             Command::ImportUser => {
@@ -77,9 +122,14 @@ impl Runtime {
             }
             Command::Reboot => out.push("Rebooting...\n".to_string()),
             Command::RebootBootsel => out.push(" Rebooting to BOOTSEL mode...\n".to_string()),
-            Command::ReadWhammy => out.push("WHAMMY:-1\n".to_string()),
-            Command::ReadJoystick => out.push("JOYSTICK:X:-1:Y:-1\n".to_string()),
-            Command::ReadPin { name } => out.push(format!("PIN:{}:ERR\n", name)),
+            Command::ReadWhammy => out.push(format!("WHAMMY:{}\n", self.whammy_value)),
+            Command::ReadJoystick => {
+                out.push(format!("JOYSTICK:X:{}:Y:{}\n", self.joystick_x, self.joystick_y))
+            }
+            Command::ReadPin { name } => {
+                let pin_value = self.pin_reads.get(name).map_or("ERR", String::as_str);
+                out.push(format!("PIN:{}:{}\n", name, pin_value));
+            }
             Command::SetLedHex { led, .. } => out.push(format!("SETLED:{}:OK\n", led)),
             Command::SetLedRgb { index, .. } => out.push(format!("SETLED:{}:OK\n", index)),
             Command::LedRestore => out.push("LEDRESTORE:OK\n".to_string()),
@@ -104,12 +154,9 @@ impl Runtime {
         out.push(render_message(OutboundMessage::StartFile { filename }));
 
         if let Some(content) = self.files.get(&normalized) {
-            for line in content.lines() {
-                let trimmed = line.trim();
-                if trimmed.is_empty() || trimmed == "FIRMWARE_READY:OK" {
-                    continue;
-                }
-                out.push(format!("{}\n", line));
+            let trimmed = content.trim();
+            if !trimmed.is_empty() && trimmed != "FIRMWARE_READY:OK" {
+                out.push(content.clone());
             }
         } else {
             out.push(format!("ERROR: File not found: {}\n", normalized));
@@ -242,6 +289,10 @@ impl Runtime {
     }
 
     fn read_device_name(&self) -> String {
+        if let Some(name) = &self.identity_device_name {
+            return name.clone();
+        }
+
         self.files
             .get("/config.json")
             .and_then(|s| serde_json::from_str::<Value>(s).ok())

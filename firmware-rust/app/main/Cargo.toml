@@ -8,3 +8,4 @@ firmware-core = { path = "../../crates/firmware-core" }
 platform-profiles = { path = "../../crates/platform-profiles" }
 config-protocol = { path = "../../crates/config-protocol" }
 config-runtime = { path = "../../crates/config-runtime" }
+serde_json = "1"
