@@ -12,28 +12,6 @@ const DEFAULT_TIMEOUT = 30000; // Enhanced default timeout (30s) - Increased tim
 const TIMEOUT_PER_KB = 8000; // Additional 8 seconds per KB for large files (enhanced from 5s)
 const LARGE_FILE_BONUS = 60000; // Extra 60 seconds for files larger than 10KB
 
-function writeToPort(port, chunk) {
-  return new Promise((resolve, reject) => {
-    port.write(chunk, (err) => err ? reject(err) : resolve());
-  });
-}
-
-function drainPort(port) {
-  return new Promise((resolve, reject) => {
-    if (typeof port.drain !== 'function') {
-      resolve();
-      return;
-    }
-
-    port.drain((err) => err ? reject(err) : resolve());
-  });
-}
-
-async function writeAndDrain(port, chunk) {
-  await writeToPort(port, chunk);
-  await drainPort(port);
-}
-
 /**
  * Reads a file from a serial device using the READFILE command.
  * Buffers until END marker, handles timeouts and errors.
@@ -239,24 +217,12 @@ function readFile(port, filename, timeoutMs = DEFAULT_TIMEOUT) {
  */
 function writeFile(port, filename, content, timeoutMs = null) {
   return new Promise(async (resolve, reject) => {
-    let payload = content;
-    if (typeof payload === 'string' && filename.toLowerCase().endsWith('.json') && !payload.includes('\n') && payload.length > 256) {
-      try {
-        payload = JSON.stringify(JSON.parse(payload), null, 2);
-        console.log(`[serialFileIO] Expanded minified JSON payload for ${filename} into multi-line transport form`);
-      } catch (jsonExpandError) {
-        console.warn(`[serialFileIO] Failed to expand JSON payload for ${filename}, sending original content`, jsonExpandError);
-      }
-    }
-
     let ackReceived = false;
     let errorReceived = false;
-    let responseBuffer = '';
-    let readyReceived = false;
     const allResponses = []; // Track all responses for debugging
     
     // Calculate dynamic timeout based on file size if not specified
-    const contentLength = typeof payload === 'string' ? payload.length : payload.byteLength || payload.length;
+    const contentLength = typeof content === 'string' ? content.length : content.byteLength || content.length;
     const fileSizeKB = Math.ceil(contentLength / 1024);
     
     // Enhanced timeout calculation: base + per-KB + large file bonus
@@ -290,54 +256,35 @@ function writeFile(port, filename, content, timeoutMs = null) {
       }
     }, actualTimeout);
     
-    let resolveReadyWait = null;
-    const readyWaitPromise = new Promise((resolve) => {
-      resolveReadyWait = resolve;
-    });
-
     function onData(data) {
       const str = data.toString();
-      responseBuffer += str;
       allResponses.push(str.trim()); // Track all responses
       console.log(`[serialFileIO] writeFile received data for ${filename}:`, JSON.stringify(str));
-
-      const readyPattern = new RegExp(`(?:WRITEFILE|STREAM):READY:${filename.replace('.', '\\.')}`, 'i');
-      if (!readyReceived && readyPattern.test(responseBuffer)) {
-        readyReceived = true;
-        console.log(`[serialFileIO] writeFile READY received for ${filename}`);
-        if (resolveReadyWait) {
-          resolveReadyWait();
-          resolveReadyWait = null;
-        }
-      }
       
       // DEBUG: Check for any device response
       if (str.includes('DEBUG:') || str.includes('Note:') || str.includes('Starting write')) {
         console.log(`[serialFileIO] DEBUG: Device acknowledged command:`, str.trim());
       }
       
-      // Completion ACK can be split across serial chunks, so inspect full buffered response.
-      if (/File\s+[^\n\r]*written/i.test(responseBuffer)) {
+      if (str.includes('File') || str.includes('written')) {
         ackReceived = true;
         clearTimeout(timer);
         port.off('data', onData);
-        port.off('error', onError);
         console.log(`[serialFileIO] writeFile SUCCESS for ${filename}`);
         resolve(true);
-      } else if ((responseBuffer.includes('ERROR:') || responseBuffer.includes('Error')) &&
-                 !responseBuffer.includes('DEBUG: Line received:') &&
-                 !responseBuffer.includes('DEBUG:') &&
-                 !responseBuffer.trim().startsWith('print(') &&
-                 !responseBuffer.includes('# ') &&
-                 !responseBuffer.includes('"""') &&
-                 !responseBuffer.includes("'''")) {
+      } else if ((str.includes('ERROR:') || str.includes('Error')) && 
+                 !str.includes('DEBUG: Line received:') && 
+                 !str.includes('DEBUG:') && 
+                 !str.trim().startsWith('print(') &&
+                 !str.includes('# ') &&
+                 !str.includes('"""') &&
+                 !str.includes("'''")) {
         // Only treat as real error if not part of echoed code content
         errorReceived = true;
         clearTimeout(timer);
         port.off('data', onData);
-        port.off('error', onError);
         console.error(`[serialFileIO] writeFile ERROR for ${filename}. All responses:`, allResponses);
-        reject(new Error(`Error writing file: ${filename}. Error: ${responseBuffer.trim()}`));
+        reject(new Error(`Error writing file: ${filename}. Error: ${str.trim()}`));
       } else if (str.includes('FIRMWARE_READY')) {
         console.log(`[serialFileIO] Received FIRMWARE_READY during ${filename} write - ignoring`);
       } else {
@@ -357,17 +304,12 @@ function writeFile(port, filename, content, timeoutMs = null) {
     port.on('data', onData);
     port.on('error', onError);
     console.log(`[serialFileIO] Sending WRITEFILE command for ${filename}`);
-    await writeAndDrain(port, `WRITEFILE:${filename}\n`);
-
-    // Wait for the device to acknowledge that it has entered write mode before
-    // streaming file content. A blind delay is not sufficient on slower polls.
-    await Promise.race([
-      readyWaitPromise,
-      new Promise((_, rejectReady) => setTimeout(() => rejectReady(new Error(`Timeout waiting for write readiness: ${filename}`)), 2000))
-    ]);
+    port.write(`WRITEFILE:${filename}\n`);
     
-    console.log(`[serialFileIO] Sending content for ${filename} (${contentLength} bytes)`);
-    const isJsonFile = filename.toLowerCase().endsWith('.json');
+    // Add a small delay to let the device process the WRITEFILE command
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    console.log(`[serialFileIO] Sending content for ${filename} (${content.length} bytes)`);
     
     // For very large files (>30KB), use chunk-based transmission to prevent memory allocation failures
     if (fileSizeKB > 30) {
@@ -377,15 +319,15 @@ function writeFile(port, filename, content, timeoutMs = null) {
       const chunkSize = 1024; // 1KB chunks to prevent memory issues
       const chunks = [];
       
-      for (let i = 0; i < payload.length; i += chunkSize) {
-        chunks.push(payload.slice(i, i + chunkSize));
+      for (let i = 0; i < content.length; i += chunkSize) {
+        chunks.push(content.slice(i, i + chunkSize));
       }
       
       console.log(`[serialFileIO] Sending ${chunks.length} chunks of ~${chunkSize} bytes each for ${filename}`);
       
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
         const chunk = chunks[chunkIndex];
-        await writeAndDrain(port, chunk);
+        port.write(chunk);
         
         // Add delay between chunks to allow device to process and write to storage
         await new Promise(resolve => setTimeout(resolve, 200)); // 200ms between chunks
@@ -397,26 +339,22 @@ function writeFile(port, filename, content, timeoutMs = null) {
       }
     } else {
       // Send content line by line with delays to prevent overwhelming the device
-      const lines = String(payload).split('\n');
+      const lines = content.split('\n');
       console.log(`[serialFileIO] Sending ${lines.length} lines for ${filename}`);
       
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         // Send line with newline (except for last line if content didn't end with newline)
-        if (i < lines.length - 1 || String(payload).endsWith('\n')) {
-          await writeAndDrain(port, line + '\n');
+        if (i < lines.length - 1 || content.endsWith('\n')) {
+          port.write(line + '\n');
         } else {
-          await writeAndDrain(port, line);
-        }
-
-        if (isJsonFile) {
-          await new Promise(resolve => setTimeout(resolve, 12));
+          port.write(line);
         }
         
         // Add delay every 10 lines to give device time to process
         if ((i + 1) % 10 === 0) {
           // Enhanced delays: 75ms for large files (>10KB), 50ms for smaller files
-          const delayMs = isJsonFile ? 120 : (fileSizeKB > 10 ? 75 : 50);
+          const delayMs = fileSizeKB > 10 ? 75 : 50;
           await new Promise(resolve => setTimeout(resolve, delayMs));
           // Log progress for large files (50+ lines)
           if (lines.length >= 50) {
@@ -427,13 +365,13 @@ function writeFile(port, filename, content, timeoutMs = null) {
     }
     
     // Ensure proper line ending before END command
-    if (!String(payload).endsWith('\n')) {
-      await writeAndDrain(port, '\n');
+    if (!content.endsWith('\n')) {
+      port.write('\n');
     }
     
     // Add a delay before sending END command
-    await new Promise(resolve => setTimeout(resolve, isJsonFile ? 750 : 100));
-    await writeAndDrain(port, 'END\n');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    port.write('END\n');
     console.log(`[serialFileIO] writeFile commands sent for ${filename}`);
   });
 }

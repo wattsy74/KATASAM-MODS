@@ -1,6 +1,5 @@
 
 const { SerialPort } = require('serialport');
-const fs = require('fs');
 const { readFile, writeFile } = require('./serialFileIO');
 
 // Flag to control automatic file reading (set to true to enable automatic loading)
@@ -26,23 +25,6 @@ function isLikelyValidDeviceName(name) {
 }
 
 class MultiDeviceManager {
-  _macCuCompanionPath(path) {
-    const p = String(path || '');
-    if (!p.startsWith('/dev/tty.')) return null;
-    return p.replace('/dev/tty.', '/dev/cu.');
-  }
-
-  _preferMacCuPath(path) {
-    if (process.platform !== 'darwin') return path;
-    const cuPath = this._macCuCompanionPath(path);
-    if (!cuPath) return path;
-    if (this.devices?.has(cuPath) || this.connectedDevices?.has(cuPath)) {
-      console.log('[MultiDeviceManager] Preferring macOS cu interface over tty:', path, '->', cuPath);
-      return cuPath;
-    }
-    return path;
-  }
-
   colorValueToHex(color) {
     if (Array.isArray(color) && color.length >= 3) {
       const channels = color.slice(0, 3).map(value => Number(value));
@@ -486,16 +468,6 @@ class MultiDeviceManager {
     );
   }
   async setActiveDevice(device, force = false) {
-    if (device && device.id) {
-      const preferredId = this._preferMacCuPath(device.id);
-      if (preferredId !== device.id && this.devices.has(preferredId)) {
-        const preferredDevice = this.devices.get(preferredId);
-        if (preferredDevice) {
-          device = preferredDevice;
-        }
-      }
-    }
-
     // Always update this.activeDevice and re-validate port, even if duplicate file read is prevented
     let skipFileRead = false;
     if (!force && this._activeDeviceFileRead && device && device.port && device.id === this._activeDeviceFileRead) {
@@ -614,17 +586,10 @@ class MultiDeviceManager {
     return this.activeDevice;
   }
   async connectDevice(deviceId) {
-    deviceId = this._preferMacCuPath(deviceId);
     console.log('[MultiDeviceManager] connectDevice called for', deviceId);
     const device = this.devices.get(deviceId);
     if (!device) throw new Error('Device not found');
     if (device.isConnected) return;
-
-    const openPathCandidates = [deviceId];
-    if (process.platform === 'darwin' && String(deviceId).startsWith('/dev/tty.')) {
-      openPathCandidates.unshift(String(deviceId).replace('/dev/tty.', '/dev/cu.'));
-    }
-
     // Robust port cleanup before connect
     if (device.port && device.port.isOpen) {
       try {
@@ -643,40 +608,15 @@ class MultiDeviceManager {
     let port;
     let openSuccess = false;
     let lastError = null;
-    let openedPath = deviceId;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        let opened = false;
-        for (const openPath of openPathCandidates) {
-          try {
-            port = new SerialPort({ path: openPath, baudRate: 115200, autoOpen: false });
-            await new Promise((resolve, reject) => {
-              port.open(err => {
-                if (err) reject(err);
-                else resolve();
-              });
-            });
-            openedPath = openPath;
-            opened = true;
-            console.log('[MultiDeviceManager] Port opened on path:', openPath, 'for device ID:', deviceId);
-            break;
-          } catch (openErr) {
-            lastError = openErr;
-            if (port && port.isOpen) {
-              try {
-                await new Promise((resolve) => {
-                  port.close(() => resolve());
-                });
-              } catch (_closeErr) {
-                // best-effort cleanup
-              }
-            }
-            port = null;
-          }
-        }
-        if (!opened) {
-          throw lastError || new Error('Unable to open serial port');
-        }
+        port = new SerialPort({ path: deviceId, baudRate: 115200, autoOpen: false });
+        await new Promise((resolve, reject) => {
+          port.open(err => {
+            if (err) reject(err);
+            else resolve();
+          });
+        });
         openSuccess = true;
         break;
       } catch (err) {
@@ -715,24 +655,6 @@ class MultiDeviceManager {
       throw new Error(`Failed to open device port: ${deviceId}`);
     }
     device.port = port;
-    if (openedPath !== deviceId) {
-      device.portInfo = {
-        ...(device.portInfo || {}),
-        path: openedPath
-      };
-    }
-    port.on('error', (err) => {
-      console.warn(`[MultiDeviceManager] Port runtime error on ${deviceId}:`, err?.message || err);
-      const msg = String(err?.message || err || '').toLowerCase();
-      if (msg.includes('enxio') || msg.includes('no such device') || msg.includes('resource busy')) {
-        device.isConnected = false;
-        this.connectedDevices.delete(deviceId);
-        if (this.activeDevice && this.activeDevice.id === deviceId) {
-          this.activeDevice = null;
-        }
-      }
-    });
-
     if (typeof window !== 'undefined') {
       window.connectedPort = port;
     }
@@ -1050,27 +972,6 @@ class MultiDeviceManager {
     
     try {
       const ports = await SerialPort.list();
-
-      if (process.platform === 'darwin') {
-        const syntheticCuPorts = [];
-        for (const port of ports) {
-          const ttyPath = String(port.path || '');
-          if (!ttyPath.startsWith('/dev/tty.usb')) continue;
-          const cuPath = ttyPath.replace('/dev/tty.', '/dev/cu.');
-          const alreadyListed = ports.some((p) => String(p.path || '') === cuPath);
-          console.log('[MultiDeviceManager] macOS cu companion check:', { ttyPath, cuPath, alreadyListed, exists: fs.existsSync(cuPath) });
-          if (alreadyListed) continue;
-          if (!fs.existsSync(cuPath)) continue;
-
-          syntheticCuPorts.push({ ...port, path: cuPath, friendlyName: cuPath });
-        }
-
-        if (syntheticCuPorts.length > 0) {
-          ports.push(...syntheticCuPorts);
-          console.log('[MultiDeviceManager] Added synthetic macOS cu ports:', syntheticCuPorts.map((p) => p.path));
-        }
-      }
-
       console.log('[MultiDeviceManager] SerialPort.list() returned:', ports.length, ports);
 
       // On macOS, many devices expose both /dev/tty.usb* and /dev/cu.usb* interfaces.
@@ -1086,33 +987,6 @@ class MultiDeviceManager {
       ports.forEach((port, idx) => {
         console.log(`[MultiDeviceManager] Port ${idx}:`, JSON.stringify(port, null, 2));
       });
-
-      const isCandidatePort = (port) => {
-        const pathLower = String(port.path || '').toLowerCase();
-        const pnpIdLower = String(port.pnpId || '').toLowerCase();
-        const manufacturerLower = String(port.manufacturer || '').toLowerCase();
-        const serialLower = String(port.serialNumber || '').toLowerCase();
-        const friendlyLower = String(port.friendlyName || '').toLowerCase();
-
-        const hasWindowsInterfaceMarker = pnpIdLower.includes('mi_02');
-        const hasUsbPathMarker =
-          pathLower.includes('/dev/cu.usb') ||
-          pathLower.includes('/dev/tty.usb') ||
-          pathLower.includes('usbmodem') ||
-          pathLower.includes('usbserial');
-        const hasKnownTextMarker =
-          manufacturerLower.includes('katasam') ||
-          manufacturerLower.includes('circuitpython') ||
-          manufacturerLower.includes('adafruit') ||
-          manufacturerLower.includes('raspberry') ||
-          serialLower.includes('circuitpython') ||
-          friendlyLower.includes('katasam') ||
-          friendlyLower.includes('circuitpython') ||
-          friendlyLower.includes('usb serial');
-
-        return hasWindowsInterfaceMarker || hasKnownTextMarker || hasUsbPathMarker;
-      };
-
       // Filter for guitar devices using cross-platform heuristics.
       // Windows commonly exposes pnpId with MI_02, while macOS often exposes /dev/cu.* paths
       // with sparse metadata (no pnpId), so we accept known USB serial indicators.
@@ -1142,11 +1016,9 @@ class MultiDeviceManager {
           friendlyLower.includes('usb serial');
         const hasUsbIdentity = Boolean(vendorLower && productLower);
         const macTtyUsbPath = pathLower.startsWith('/dev/tty.usb');
-        const matchingCuByPath =
-          macTtyUsbPath
-            ? ports.find((otherPort) => String(otherPort.path || '') === String(port.path || '').replace('/dev/tty.', '/dev/cu.'))
-            : null;
-        const hasMatchingCuByExactPath = !!(matchingCuByPath && isCandidatePort(matchingCuByPath));
+        const hasMatchingCuByExactPath =
+          macTtyUsbPath &&
+          portPaths.has(port.path.replace('/dev/tty.', '/dev/cu.'));
         const normalizedSerialLower = String(port.serialNumber || '').trim().toLowerCase();
         const hasMatchingCuBySerial =
           macTtyUsbPath &&
@@ -1154,7 +1026,7 @@ class MultiDeviceManager {
           ports.some((otherPort) => {
             const otherPath = String(otherPort.path || '').toLowerCase();
             const otherSerial = String(otherPort.serialNumber || '').trim().toLowerCase();
-            return otherPath.startsWith('/dev/cu.usb') && otherSerial === normalizedSerialLower && isCandidatePort(otherPort);
+            return otherPath.startsWith('/dev/cu.usb') && otherSerial === normalizedSerialLower;
           });
         const stem = getMacUsbStem(port.path);
         const hasMatchingCuByStem =
@@ -1163,11 +1035,11 @@ class MultiDeviceManager {
           ports.some((otherPort) => {
             const otherPath = String(otherPort.path || '').toLowerCase();
             if (!otherPath.startsWith('/dev/cu.usb')) return false;
-            return getMacUsbStem(otherPort.path) === stem && isCandidatePort(otherPort);
+            return getMacUsbStem(otherPort.path) === stem;
           });
         const hasMatchingCuInterface = hasMatchingCuByExactPath || hasMatchingCuBySerial || hasMatchingCuByStem;
 
-        const isCandidate = isCandidatePort(port);
+        const isCandidate = hasWindowsInterfaceMarker || hasKnownTextMarker || hasUsbPathMarker;
         const includeThisPort = isCandidate && !hasMatchingCuInterface;
 
         console.log(
@@ -1393,10 +1265,6 @@ class MultiDeviceManager {
           }
 
           try {
-            if (process.platform === 'darwin' && String(path || '').startsWith('/dev/tty.')) {
-              handshakeScoreCache.set(path, 0);
-              return 0;
-            }
             const probeName = await this.tryGetDeviceNameBeforeConnection({ path });
             // Explicit non-empty name is strongest signal; "Unknown" still means
             // firmware protocol responded correctly.
@@ -1509,23 +1377,8 @@ class MultiDeviceManager {
       // Log device map population
       const newDevices = new Map();
       for (const port of guitarDevices) {
-        let selectedPort = port;
-        const originalPath = String(port.path || '');
-        if (process.platform === 'darwin' && originalPath.startsWith('/dev/tty.')) {
-          const cuPath = originalPath.replace('/dev/tty.', '/dev/cu.');
-          const matchingCuPort = ports.find((p) => String(p.path || '') === cuPath);
-          if (matchingCuPort) {
-            selectedPort = matchingCuPort;
-            console.log('[MultiDeviceManager] Canonicalized scan device to macOS cu interface:', originalPath, '->', cuPath);
-          }
-        }
-
-        const deviceId = selectedPort.path;
-        if (newDevices.has(deviceId)) {
-          continue;
-        }
-
-        let displayName = selectedPort.friendlyName || selectedPort.path;
+        const deviceId = port.path;
+        let displayName = port.friendlyName || port.path;
         let cachedName = null;
         let bootPyName = null;
         let isConnected = false;
@@ -1593,11 +1446,7 @@ class MultiDeviceManager {
         // Always try to get device name if we don't have a cached name, regardless of new/existing
         if (!cachedName) {
           try {
-            if (!(process.platform === 'darwin' && String(selectedPort.path || '').startsWith('/dev/tty.'))) {
-              deviceNameBeforeConnection = await this.tryGetDeviceNameBeforeConnection(selectedPort);
-            } else {
-              console.log('[MultiDeviceManager] Skipping pre-connect name probe for macOS tty path:', selectedPort.path);
-            }
+            deviceNameBeforeConnection = await this.tryGetDeviceNameBeforeConnection(port);
             if (deviceNameBeforeConnection && deviceNameBeforeConnection !== 'Unknown') {
               displayName = deviceNameBeforeConnection;
               console.log(`[MultiDeviceManager] Got device name before connection: ${deviceId} -> ${displayName}`);
@@ -1613,11 +1462,11 @@ class MultiDeviceManager {
         } else if (cachedName) {
           displayName = cachedName.replace(/^KATASAM Guitars - /, '').trim();
         } else {
-          displayName = selectedPort.friendlyName || selectedPort.path;
+          displayName = port.friendlyName || port.path;
         }
         newDevices.set(deviceId, {
           id: deviceId,
-          portInfo: selectedPort,
+          portInfo: port,
           displayName,
           getDisplayName: function() { return this.displayName || this.portInfo.friendlyName || this.portInfo.path; },
           isConnected: false,
@@ -1636,31 +1485,6 @@ class MultiDeviceManager {
         }
       }
       this.devices = newDevices;
-
-      if (process.platform === 'darwin') {
-        for (const [connectedId, connectedDevice] of Array.from(this.connectedDevices.entries())) {
-          const cuId = this._macCuCompanionPath(connectedId);
-          if (!cuId || !this.devices.has(cuId)) continue;
-
-          const cuDeviceFromScan = this.devices.get(cuId);
-          const migratedDevice = {
-            ...cuDeviceFromScan,
-            isConnected: true,
-            port: connectedDevice.port
-          };
-
-          this.connectedDevices.set(cuId, migratedDevice);
-          this.connectedDevices.delete(connectedId);
-
-          if (this.activeDevice && this.activeDevice.id === connectedId) {
-            this.activeDevice = migratedDevice;
-            console.log('[MultiDeviceManager] Migrated active macOS tty device to cu during scan:', connectedId, '->', cuId);
-          } else {
-            console.log('[MultiDeviceManager] Migrated connected macOS tty device to cu during scan:', connectedId, '->', cuId);
-          }
-        }
-      }
-
       // Log the map after population
       console.log('[MultiDeviceManager] devices map after scan:', Array.from(this.devices.entries()));
       if (typeof window !== 'undefined' && typeof window.updateDeviceList === 'function') {
