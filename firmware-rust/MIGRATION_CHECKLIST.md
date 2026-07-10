@@ -33,6 +33,7 @@ Branch: firmware-rebuild-native-xbox-ps-support
 - [x] Prepare first real-capture fixture placeholders and intake workflow
 - [x] Capture and pass real-capture replay gate for `capture-001`
 - [x] Capture and pass real-capture replay gate for `capture-002`
+- [x] Capture and pass real-capture replay gate for `capture-003`
 - [ ] Implement full command coverage from current serial handler
 - [ ] Implement safe config read/write with atomic persistence
 - [ ] Verify configurator core flows pass

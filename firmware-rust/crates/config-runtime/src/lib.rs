@@ -20,6 +20,7 @@ pub struct Runtime {
     joystick_x: i32,
     joystick_y: i32,
     pin_reads: BTreeMap<String, String>,
+    legacy_double_slash_write_ack: bool,
     active_write_path: Option<String>,
     write_is_streaming: bool,
     write_lines: Vec<String>,
@@ -36,6 +37,7 @@ impl Runtime {
             joystick_x: -1,
             joystick_y: -1,
             pin_reads: BTreeMap::new(),
+            legacy_double_slash_write_ack: false,
             ..Self::default()
         }
     }
@@ -66,6 +68,11 @@ impl Runtime {
         if !key.is_empty() && !val.is_empty() {
             self.pin_reads.insert(key.to_string(), val.to_string());
         }
+        self
+    }
+
+    pub fn with_legacy_double_slash_write_ack(mut self, enabled: bool) -> Self {
+        self.legacy_double_slash_write_ack = enabled;
         self
     }
 
@@ -226,7 +233,10 @@ impl Runtime {
             if path == "/config.json" {
                 out.push("File /config.json written (atomic)\n".to_string());
             } else {
-                out.push(format!("File {} written (atomic)\n", path));
+                out.push(format!(
+                    "File {} written (atomic)\n",
+                    self.format_written_path(&path)
+                ));
             }
             return;
         }
@@ -238,9 +248,15 @@ impl Runtime {
         self.files.insert(path.clone(), persisted);
 
         if is_stream {
-            out.push(format!("File {} written (high-speed streaming)\n", path));
+            out.push(format!(
+                "File {} written (high-speed streaming)\n",
+                self.format_written_path(&path)
+            ));
         } else {
-            out.push(render_message(OutboundMessage::FileWritten { path: &path }));
+            let path_for_message = self.format_written_path(&path);
+            out.push(render_message(OutboundMessage::FileWritten {
+                path: &path_for_message,
+            }));
         }
     }
 
@@ -302,6 +318,13 @@ impl Runtime {
                     .map(ToOwned::to_owned)
             })
             .unwrap_or_else(|| DEFAULT_DEVICE_NAME.to_string())
+    }
+
+    fn format_written_path(&self, path: &str) -> String {
+        if self.legacy_double_slash_write_ack && path.starts_with('/') {
+            return format!("/{}", path);
+        }
+        path.to_string()
     }
 }
 

@@ -81,6 +81,7 @@ whammy_value=""
 joystick_x=""
 joystick_y=""
 pin_reads=""
+legacy_double_slash_write_ack=""
 
 if [[ -f "${golden_file}" ]]; then
   runtime_version="$(awk '/^VERSION:/{sub(/^VERSION:/,""); print; exit}' "${golden_file}")"
@@ -101,6 +102,10 @@ if [[ -f "${golden_file}" ]]; then
     END { print pairs }
   ' "${golden_file}")"
 
+  if awk '/^File \/\// {found=1; exit} END {exit !found}' "${golden_file}"; then
+    legacy_double_slash_write_ack="1"
+  fi
+
   extract_payload "ACK: READFILE:/config.jso" "END_config.json" "${config_override_file}"
   extract_payload "ACK: READFILE:/user_prese" "END_user_presets.json" "${user_presets_override_file}"
 
@@ -117,6 +122,7 @@ cat "${cmd_file}" | \
   KATASAM_JOYSTICK_X="${joystick_x}" \
   KATASAM_JOYSTICK_Y="${joystick_y}" \
   KATASAM_PIN_READS="${pin_reads}" \
+  KATASAM_LEGACY_DOUBLE_SLASH_WRITE_ACK="${legacy_double_slash_write_ack}" \
   KATASAM_CONFIG_OVERRIDE_FILE="${config_override_file}" \
   KATASAM_USER_PRESETS_OVERRIDE_FILE="${user_presets_override_file}" \
   cargo run -q -p katasam-firmware-main -- --protocol-stdio > "${out_file}"

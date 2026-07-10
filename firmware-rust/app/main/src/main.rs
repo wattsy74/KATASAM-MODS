@@ -131,6 +131,9 @@ fn seed_runtime_from_repo_files() -> Runtime {
         }
     }
 
+    let legacy_double_slash_write_ack = parse_bool_env("KATASAM_LEGACY_DOUBLE_SLASH_WRITE_ACK");
+    runtime = runtime.with_legacy_double_slash_write_ack(legacy_double_slash_write_ack);
+
     runtime
 }
 
@@ -139,6 +142,16 @@ fn parse_i32_env(key: &str, default: i32) -> i32 {
         .ok()
         .and_then(|v| v.trim().parse::<i32>().ok())
         .unwrap_or(default)
+}
+
+fn parse_bool_env(key: &str) -> bool {
+    std::env::var(key)
+        .ok()
+        .map(|v| {
+            let t = v.trim().to_ascii_lowercase();
+            t == "1" || t == "true" || t == "yes" || t == "on"
+        })
+        .unwrap_or(false)
 }
 
 fn repo_root_from_cwd() -> PathBuf {
