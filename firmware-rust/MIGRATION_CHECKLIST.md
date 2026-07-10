@@ -31,6 +31,8 @@ Branch: firmware-rebuild-native-xbox-ps-support
 - [x] Add app-level line-based protocol transport adapter (stdio bridge)
 - [x] Add automated fixture replay script for parity checks against stdio bridge
 - [x] Prepare first real-capture fixture placeholders and intake workflow
+- [x] Capture and pass real-capture replay gate for `capture-001`
+- [x] Capture and pass real-capture replay gate for `capture-002`
 - [ ] Implement full command coverage from current serial handler
 - [ ] Implement safe config read/write with atomic persistence
 - [ ] Verify configurator core flows pass
