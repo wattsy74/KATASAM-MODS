@@ -1,0 +1,1 @@
+usb_device::device::UsbDeviceBuilder<'_, rp2040_hal::usb::UsbBus>

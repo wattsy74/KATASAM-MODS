@@ -70,3 +70,37 @@ python3 -m pip install --user hid
 ```
 
 See `fixtures/hid/HID_CAPTURE_WORKFLOW.md` for capture expectations.
+
+## RP2040 Test Firmware (HID + BOOTSEL)
+
+Build a flashable UF2 for the Rust RP2040 test firmware:
+
+```bash
+cd firmware-rust
+./scripts/build_test_fw_uf2.sh
+```
+
+Output:
+- `dist/katasam-rp2040-test-fw.uf2`
+
+Behavior in this test firmware:
+- Enumerates as a USB HID gamepad and continuously streams changing XY/button reports.
+- Exposes USB CDC serial control command for software BOOTSEL entry.
+
+Programmatic BOOTSEL entry (no button access required):
+
+```bash
+cd firmware-rust
+python3 scripts/enter_bootsel.py --port /dev/cu.usbmodemXXXX
+```
+
+If `--port` is omitted, the script uses the first `/dev/cu.usbmodem*` device found.
+
+Quick HID stream verification after flashing:
+
+```bash
+cd firmware-rust
+python3 scripts/verify_hid_stream.py --vid 0x2E8A --pid 0x1031 --duration 5
+```
+
+The verifier checks report count, uniqueness, and per-byte activity thresholds and returns non-zero on failure.

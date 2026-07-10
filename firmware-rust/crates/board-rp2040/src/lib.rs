@@ -16,3 +16,40 @@ impl Rp2040Board {
         Self
     }
 }
+
+pub const BOOTSEL_COMMAND: &[u8] = b"BOOTSEL";
+pub const REBOOT_BOOTSEL_COMMAND: &[u8] = b"REBOOT_BOOTSEL";
+
+pub fn is_bootsel_command(line: &[u8]) -> bool {
+    let trimmed = trim_ascii(line);
+    trimmed.eq_ignore_ascii_case(BOOTSEL_COMMAND)
+        || trimmed.eq_ignore_ascii_case(REBOOT_BOOTSEL_COMMAND)
+}
+
+fn trim_ascii(input: &[u8]) -> &[u8] {
+    let mut start = 0;
+    let mut end = input.len();
+
+    while start < end && matches!(input[start], b'\r' | b'\n' | b' ' | b'\t') {
+        start += 1;
+    }
+
+    while end > start && matches!(input[end - 1], b'\r' | b'\n' | b' ' | b'\t') {
+        end -= 1;
+    }
+
+    &input[start..end]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_bootsel_command;
+
+    #[test]
+    fn matches_bootsel_variants() {
+        assert!(is_bootsel_command(b"BOOTSEL"));
+        assert!(is_bootsel_command(b"bootsel\n"));
+        assert!(is_bootsel_command(b"  REBOOT_BOOTSEL\r\n"));
+        assert!(!is_bootsel_command(b"noop"));
+    }
+}

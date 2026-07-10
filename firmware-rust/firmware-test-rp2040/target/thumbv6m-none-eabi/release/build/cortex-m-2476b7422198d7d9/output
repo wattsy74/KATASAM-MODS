@@ -1,0 +1,4 @@
+cargo:rustc-link-lib=static=cortex-m
+cargo:rustc-link-search=/Users/martynwatts/Documents/GitHub/KATASAM-MODS/firmware-rust/firmware-test-rp2040/target/thumbv6m-none-eabi/release/build/cortex-m-2476b7422198d7d9/out
+cargo:rustc-cfg=cortex_m
+cargo:rustc-cfg=armv6m
