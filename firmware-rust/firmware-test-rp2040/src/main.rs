@@ -77,6 +77,10 @@ const MAGIC_PRESETS: [u8; 4] = *b"KPRE";
 const MAGIC_USER_PRESETS: [u8; 4] = *b"KUSR";
 #[cfg(not(feature = "rescue-mode"))]
 const LED_COUNT: usize = 7;
+#[cfg(not(feature = "rescue-mode"))]
+const TILTWAVE_MAX_STEPS: u16 = 120;
+#[cfg(not(feature = "rescue-mode"))]
+const TILTWAVE_CYCLES: u16 = 3;
 
 #[cfg(not(feature = "rescue-mode"))]
 const LED_PRESSED: [RGB8; LED_COUNT] = [
@@ -98,6 +102,29 @@ const LED_RELEASED: [RGB8; LED_COUNT] = [
     RGB8 { r: 105, g: 107, b: 0 },
     RGB8 { r: 140, g: 0, b: 9 },
     RGB8 { r: 0, g: 61, b: 0 },
+];
+
+#[cfg(not(feature = "rescue-mode"))]
+const TILTWAVE_COLORS: [RGB8; 19] = [
+    RGB8 { r: 0, g: 0, b: 255 },
+    RGB8 { r: 0, g: 100, b: 255 },
+    RGB8 { r: 0, g: 150, b: 255 },
+    RGB8 { r: 50, g: 200, b: 255 },
+    RGB8 { r: 100, g: 220, b: 255 },
+    RGB8 { r: 150, g: 240, b: 255 },
+    RGB8 { r: 200, g: 250, b: 255 },
+    RGB8 { r: 255, g: 255, b: 255 },
+    RGB8 { r: 200, g: 250, b: 255 },
+    RGB8 { r: 150, g: 240, b: 255 },
+    RGB8 { r: 100, g: 220, b: 255 },
+    RGB8 { r: 50, g: 200, b: 255 },
+    RGB8 { r: 0, g: 150, b: 255 },
+    RGB8 { r: 0, g: 100, b: 255 },
+    RGB8 { r: 0, g: 50, b: 255 },
+    RGB8 { r: 0, g: 25, b: 128 },
+    RGB8 { r: 0, g: 12, b: 64 },
+    RGB8 { r: 0, g: 0, b: 32 },
+    RGB8 { r: 0, g: 0, b: 0 },
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -151,6 +178,25 @@ fn trim_ascii_spaces(input: &str) -> &str {
     }
 
     &input[start..end]
+}
+
+fn parse_bool_token(input: &str) -> Option<bool> {
+    let token = trim_ascii_spaces(input);
+    if token.eq_ignore_ascii_case("true")
+        || token.eq_ignore_ascii_case("on")
+        || token.eq_ignore_ascii_case("yes")
+        || token == "1"
+    {
+        Some(true)
+    } else if token.eq_ignore_ascii_case("false")
+        || token.eq_ignore_ascii_case("off")
+        || token.eq_ignore_ascii_case("no")
+        || token == "0"
+    {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 fn command_requires_ack(line: &str) -> bool {
@@ -521,6 +567,57 @@ fn parse_led_palette_from_config(config_text: &str, key: &str) -> Option<[RGB8; 
 }
 
 #[cfg(not(feature = "rescue-mode"))]
+fn parse_bool_from_config(config_text: &str, key: &str) -> Option<bool> {
+    let key_pos = config_text.find(key)?;
+    let after_key = &config_text[key_pos + key.len()..];
+    let colon_pos = after_key.find(':')?;
+    parse_bool_token(&after_key[colon_pos + 1..])
+}
+
+#[cfg(not(feature = "rescue-mode"))]
+fn start_tilt_wave(active: &mut bool, step: &mut u16, led_counter: &mut u8) {
+    *active = true;
+    *step = 0;
+    *led_counter = 0;
+}
+
+#[cfg(not(feature = "rescue-mode"))]
+fn render_tilt_wave_frame(step: u16, frame: &mut [RGB8; LED_COUNT]) {
+    let total_sweep_steps = core::cmp::max(1u16, TILTWAVE_MAX_STEPS / TILTWAVE_CYCLES);
+    let current_cycle_step = step % total_sweep_steps;
+    let wave_position = ((current_cycle_step as usize) * (LED_COUNT * 2)) / (total_sweep_steps as usize);
+    let cycle_num = step / total_sweep_steps;
+
+    let mut led_index = 0usize;
+    while led_index < LED_COUNT {
+        let distance = if (led_index * 2) > wave_position {
+            (led_index * 2) - wave_position
+        } else {
+            wave_position - (led_index * 2)
+        };
+
+        let mut color_idx: usize = if distance == 0 {
+            7
+        } else if distance == 1 {
+            5 + (current_cycle_step as usize % 3)
+        } else if distance == 2 {
+            3 + (current_cycle_step as usize % 2)
+        } else if distance <= 4 {
+            4usize.saturating_sub(distance)
+        } else {
+            0
+        };
+
+        if cycle_num > 0 && (led_index + step as usize) % LED_COUNT == 0 {
+            color_idx = core::cmp::min(TILTWAVE_COLORS.len() - 1, color_idx + 3);
+        }
+
+        frame[led_index] = TILTWAVE_COLORS[color_idx];
+        led_index += 1;
+    }
+}
+
+#[cfg(not(feature = "rescue-mode"))]
 fn led_index_from_name(name: &str) -> Option<usize> {
     let n = trim_ascii_spaces(name);
     if n.eq_ignore_ascii_case("strum-up") || n.eq_ignore_ascii_case("strum-up-active") {
@@ -744,9 +841,14 @@ fn main() -> ! {
     #[cfg(not(feature = "rescue-mode"))]
     let mut led_released_palette = LED_RELEASED;
     #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_enabled = true;
+    #[cfg(not(feature = "rescue-mode"))]
     if let Ok(config_text) = core::str::from_utf8(config_json.as_slice()) {
         if let Some(parsed_palette) = parse_led_palette_from_config(config_text, "\"released_color\"") {
             led_released_palette = parsed_palette;
+        }
+        if let Some(parsed_enabled) = parse_bool_from_config(config_text, "\"tilt_wave_enabled\"") {
+            tilt_wave_enabled = parsed_enabled;
         }
     }
 
@@ -756,6 +858,18 @@ fn main() -> ! {
     let mut preview_frame = led_released_palette;
     #[cfg(not(feature = "rescue-mode"))]
     let mut preview_active = false;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_frame = led_released_palette;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_active = false;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_step: u16 = 0;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_led_counter: u8 = 0;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut previous_tilt_pressed = false;
+    #[cfg(not(feature = "rescue-mode"))]
+    let mut tilt_wave_trigger_requested = false;
 
     let mut next_report_at = timer.get_counter().ticks();
     #[cfg(feature = "rescue-mode")]
@@ -967,9 +1081,29 @@ fn main() -> ! {
                                         } else if line.eq_ignore_ascii_case("DEMO") {
                                             tx_push_str(&mut tx_buf, "DEMO:STARTED\n");
                                         } else if line.eq_ignore_ascii_case("TILTWAVE") {
+                                            #[cfg(not(feature = "rescue-mode"))]
+                                            {
+                                                if tilt_wave_enabled {
+                                                    tilt_wave_trigger_requested = true;
+                                                }
+                                            }
                                             tx_push_str(&mut tx_buf, "TILTWAVE:STARTED\n");
                                         } else if starts_with_ignore_ascii_case(line, "TILTWAVE_ENABLE:") {
-                                            tx_push_str(&mut tx_buf, "TILTWAVE_ENABLE:OK\n");
+                                            let value_text = line.split(':').nth(1).unwrap_or("");
+                                            if let Some(enabled) = parse_bool_token(value_text) {
+                                                #[cfg(not(feature = "rescue-mode"))]
+                                                {
+                                                    tilt_wave_enabled = enabled;
+                                                    if !tilt_wave_enabled {
+                                                        tilt_wave_active = false;
+                                                        tilt_wave_trigger_requested = false;
+                                                    }
+                                                }
+                                                tx_push_str(&mut tx_buf, "TILTWAVE_ENABLE:");
+                                                tx_push_str(&mut tx_buf, if enabled { "true\n" } else { "false\n" });
+                                            } else {
+                                                tx_push_str(&mut tx_buf, "ERROR: Invalid TILTWAVE_ENABLE value\n");
+                                            }
                                         } else if starts_with_ignore_ascii_case(line, "DETECTPIN:") {
                                             tx_push_str(&mut tx_buf, "PINDETECT:START:");
                                             if let Some(name) = line.split(':').nth(1) {
@@ -1142,6 +1276,18 @@ fn main() -> ! {
                         (WriteTarget::Config, Ok(())) => {
                             config_json.clear();
                             let _ = config_json.extend_from_slice(pending_flash_bytes.as_slice());
+                            #[cfg(not(feature = "rescue-mode"))]
+                            if let Ok(config_text) = core::str::from_utf8(config_json.as_slice()) {
+                                if let Some(parsed_enabled) =
+                                    parse_bool_from_config(config_text, "\"tilt_wave_enabled\"")
+                                {
+                                    tilt_wave_enabled = parsed_enabled;
+                                    if !tilt_wave_enabled {
+                                        tilt_wave_active = false;
+                                        tilt_wave_trigger_requested = false;
+                                    }
+                                }
+                            }
                             tx_push_str(&mut tx_buf, "File /config.json written (flash)\n");
                         }
                         (WriteTarget::Presets, Ok(())) => {
@@ -1284,6 +1430,29 @@ fn main() -> ! {
 
             let y_axis = axis_from_dpad(dpad_up_pressed, dpad_down_pressed);
 
+            if tilt_wave_enabled && (tilt_wave_trigger_requested || (tilt_pressed && !previous_tilt_pressed)) {
+                start_tilt_wave(
+                    &mut tilt_wave_active,
+                    &mut tilt_wave_step,
+                    &mut tilt_wave_led_counter,
+                );
+            }
+            tilt_wave_trigger_requested = false;
+            previous_tilt_pressed = tilt_pressed;
+
+            if tilt_wave_active {
+                tilt_wave_led_counter = tilt_wave_led_counter.wrapping_add(1);
+                if tilt_wave_led_counter >= 2 {
+                    tilt_wave_led_counter = 0;
+                    if tilt_wave_step >= TILTWAVE_MAX_STEPS {
+                        tilt_wave_active = false;
+                    } else {
+                        render_tilt_wave_frame(tilt_wave_step, &mut tilt_wave_frame);
+                        tilt_wave_step = tilt_wave_step.wrapping_add(1);
+                    }
+                }
+            }
+
             #[cfg(feature = "v2-analog")]
             let mut z_axis: u8 = 0;
 
@@ -1325,6 +1494,8 @@ fn main() -> ! {
 
             if preview_active {
                 let _ = ws.write(preview_frame.iter().copied());
+            } else if tilt_wave_active {
+                let _ = ws.write(tilt_wave_frame.iter().copied());
             } else {
                 let _ = ws.write(led_frame.iter().copied());
                 preview_frame = led_frame;
