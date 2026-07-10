@@ -365,6 +365,12 @@ class AutomaticFirmwareUpdater {
      * Get current firmware version from device - NO FALLBACKS
      */
     async getCurrentVersion() {
+        const writeInProgress = (window.__serialOperationState?.writeInProgress || 0) > 0;
+        if (window.multiDeviceManager?._fileOperationInProgress || writeInProgress) {
+            console.log('⏳ [AutomaticUpdater] Skipping version detection during active serial file write operation');
+            return null;
+        }
+
         // Check if setupDeviceInformation is currently running to avoid conflicts
         if (window.setupDeviceInformationInProgress) {
             console.log('⏳ [AutomaticUpdater] setupDeviceInformation is in progress, waiting for it to complete...');

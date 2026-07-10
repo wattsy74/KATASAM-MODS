@@ -1399,17 +1399,154 @@ const serialFileIO = require('./serialFileIO');
 const multiDeviceManager = new MultiDeviceManager();
 window.multiDeviceManager = multiDeviceManager;
 
+function getMacCuCompanionPath(pathValue) {
+  const path = String(pathValue || '');
+  if (!path.startsWith('/dev/tty.')) return null;
+  return path.replace('/dev/tty.', '/dev/cu.');
+}
+
+function isRecoverableSerialWriteError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('enxio') || msg.includes('no such device') || msg.includes('resource busy') || msg.includes('eio');
+}
+
+const serialOperationState = window.__serialOperationState || {
+  writeInProgress: 0
+};
+window.__serialOperationState = serialOperationState;
+
+function beginSerialWriteOperation() {
+  serialOperationState.writeInProgress += 1;
+  if (window.multiDeviceManager) {
+    window.multiDeviceManager._fileOperationInProgress = true;
+  }
+}
+
+function endSerialWriteOperation() {
+  serialOperationState.writeInProgress = Math.max(0, serialOperationState.writeInProgress - 1);
+  if (serialOperationState.writeInProgress === 0 && window.multiDeviceManager) {
+    window.multiDeviceManager._fileOperationInProgress = false;
+  }
+}
+
+async function waitForNoSerialWrite(timeoutMs = 6000) {
+  const start = Date.now();
+  while (serialOperationState.writeInProgress > 0) {
+    if (Date.now() - start >= timeoutMs) {
+      return false;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  return true;
+}
+
+function normalizeJsonForComparison(text) {
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch (_err) {
+    return null;
+  }
+}
+
+async function verifyTimedOutJsonWrite(targetPort, filename, expectedContent) {
+  if (!filename.toLowerCase().endsWith('.json')) {
+    return false;
+  }
+
+  const expectedNormalized = normalizeJsonForComparison(String(expectedContent));
+  if (!expectedNormalized) {
+    return false;
+  }
+
+  await new Promise(resolve => setTimeout(resolve, 1200));
+
+  try {
+    const readBack = await serialFileIO.readFile(targetPort, filename, 12000);
+    const actualNormalized = normalizeJsonForComparison(String(readBack));
+    return !!actualNormalized && actualNormalized === expectedNormalized;
+  } catch (verifyErr) {
+    console.warn('[serialFileIO.writeFile] Timed-out JSON write verification failed:', verifyErr?.message || verifyErr);
+    return false;
+  }
+}
+
+async function resolveWritablePort() {
+  const manager = window.multiDeviceManager;
+  let activeDevice = manager?.getActiveDevice?.();
+
+  if (process.platform === 'darwin' && activeDevice?.id) {
+    const cuId = getMacCuCompanionPath(activeDevice.id);
+    if (cuId) {
+      const cuDevice = manager?.devices?.get(cuId) || manager?.connectedDevices?.get(cuId);
+      if (cuDevice) {
+        if (!cuDevice.isConnected && typeof manager.connectDevice === 'function') {
+          await manager.connectDevice(cuId);
+        } else if (typeof manager.setActiveDevice === 'function') {
+          await manager.setActiveDevice(cuDevice);
+        }
+        activeDevice = manager?.getActiveDevice?.() || cuDevice;
+      }
+    }
+  }
+
+  const activePort = activeDevice?.port;
+  if (activePort && activePort.isOpen) {
+    connectedPort = activePort;
+    window.connectedPort = activePort;
+    return activePort;
+  }
+
+  if (connectedPort && connectedPort.isOpen) {
+    return connectedPort;
+  }
+
+  return null;
+}
+
 // Make serialFileIO available globally for firmware updater
 window.serialFileIO = {
-  writeFile: async (port, filename, content, timeoutMs) => {
+  writeFile: async (_port, filename, content, timeoutMs) => {
     const activeDevice = window.multiDeviceManager?.getActiveDevice?.();
     if (!activeDevice || !activeDevice.isConnected || !activeDevice.port) {
       return Promise.reject(new Error('No active device connected'));
     }
-    
-    return serialFileIO.writeFile(port, filename, content, timeoutMs);
+
+    let targetPort = await resolveWritablePort();
+    if (!targetPort) {
+      return Promise.reject(new Error('No writable device port available'));
+    }
+
+    beginSerialWriteOperation();
+    try {
+      return await serialFileIO.writeFile(targetPort, filename, content, timeoutMs);
+    } catch (err) {
+      const errMessage = String(err?.message || err || '');
+      if (/timeout writing file:/i.test(errMessage)) {
+        const verified = await verifyTimedOutJsonWrite(targetPort, filename, content);
+        if (verified) {
+          console.warn('[serialFileIO.writeFile] Timed-out JSON write verified by readback, treating as success:', filename);
+          return true;
+        }
+      }
+
+      if (!isRecoverableSerialWriteError(err)) throw err;
+      console.warn('[serialFileIO.writeFile] Recoverable serial write error, rescanning and retrying once:', err?.message || err);
+      if (typeof window.multiDeviceManager?.scanForDevices === 'function') {
+        await window.multiDeviceManager.scanForDevices();
+      }
+      targetPort = await resolveWritablePort();
+      if (!targetPort) throw err;
+      return serialFileIO.writeFile(targetPort, filename, content, timeoutMs);
+    } finally {
+      endSerialWriteOperation();
+    }
   },
   readFile: async (filename, timeoutMs) => {
+    const clearForRead = await waitForNoSerialWrite(6000);
+    if (!clearForRead) {
+      return Promise.reject(new Error('Serial write operation in progress; read deferred'));
+    }
+
     const activeDevice = window.multiDeviceManager?.getActiveDevice?.();
     if (!activeDevice || !activeDevice.isConnected || !activeDevice.port) {
       return Promise.reject(new Error('No active device connected'));
@@ -1683,9 +1820,10 @@ async function rebootAndReload(fileToReload = 'presets.json') {
       console.warn('[rebootAndReload] Reboot already in progress, ignoring duplicate call');
       return;
     }
+    connectedPort = await resolveWritablePort();
     if (!connectedPort) {
       console.warn('[rebootAndReload] No connected port, cannot reboot');
-      
+
       // Clear rename flag when no port available
       window._renameInProgress = false;
       rebootInProgress = false;
@@ -1709,10 +1847,27 @@ async function rebootAndReload(fileToReload = 'presets.json') {
         console.log('[rebootAndReload] Remembering device before reboot:', { rebootDeviceId, rebootPID, rebootSerial, rebootPnpId, rebootPath });
       }
     }
-    connectedPort.write("REBOOT\n", err => {
-      if (err) console.error('[rebootAndReload] Error sending REBOOT:', err);
-      else console.log('[rebootAndReload] Sent REBOOT');
+    await new Promise((resolve, reject) => {
+      connectedPort.write("REBOOT\n", err => {
+        if (err) reject(err);
+        else resolve();
+      });
+    }).catch(async (err) => {
+      if (!isRecoverableSerialWriteError(err)) throw err;
+      console.warn('[rebootAndReload] Recoverable REBOOT write error, rescanning and retrying once:', err?.message || err);
+      if (typeof window.multiDeviceManager?.scanForDevices === 'function') {
+        await window.multiDeviceManager.scanForDevices();
+      }
+      connectedPort = await resolveWritablePort();
+      if (!connectedPort) throw err;
+      await new Promise((resolve, reject) => {
+        connectedPort.write("REBOOT\n", retryErr => {
+          if (retryErr) reject(retryErr);
+          else resolve();
+        });
+      });
     });
+    console.log('[rebootAndReload] Sent REBOOT');
     updateStatus("Device rebooting to reload...", true);
     
     // Wait a moment for the REBOOT command to be processed before disconnecting
@@ -4627,7 +4782,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-document.getElementById('apply-config-btn')?.addEventListener('click', () => {
+document.getElementById('apply-config-btn')?.addEventListener('click', async () => {
   // DEBUG: Start of apply-config handler
   console.log('[DEBUG][apply-config] Handler triggered');
   // Always use the current active device's port from the multi-device manager
@@ -4640,6 +4795,18 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     console.warn('[DEBUG][apply-config] No device connected or active:', { port, activeDevice });
     updateStatus('No device connected', false);
     customAlert('No device is currently connected or active.');
+    return;
+  }
+
+  const activeFw = String(activeDevice?.firmwareVersion || '').toLowerCase();
+  const isKnownUnstableRustWriteBuild = activeFw === '0.1.1' || activeFw === 'v0.1.1';
+  if (isKnownUnstableRustWriteBuild) {
+    console.warn('[DEBUG][apply-config] Blocking config write on known unstable Rust test firmware build:', {
+      name: activeDevice?.displayName || activeDevice?.name,
+      firmwareVersion: activeDevice?.firmwareVersion
+    });
+    updateStatus('Config write disabled for Rust test firmware', false);
+    customAlert('Config write is disabled for this Rust test firmware build (v0.1.1) because it can hang the device during WRITEFILE.\n\nFlash a stable firmware build with validated config persistence before applying config changes.');
     return;
   }
   // Fallback: try to use window.originalConfig if local is missing
@@ -4692,8 +4859,9 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     return;
   }
 
+  let configForDevice = null;
   try {
-    const configForDevice = normalizeConfigColorsToHex(originalConfig);
+    configForDevice = normalizeConfigColorsToHex(originalConfig);
 
     console.log('[DEBUG][apply-config] Normalized colors for HEX config write:');
     console.log('[DEBUG][apply-config] Original led_color:', originalConfig.led_color);
@@ -4708,9 +4876,16 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
       window.multiDeviceManager.markConfigWrite();
     }
     
-    port.write('WRITEFILE:config.json\n');
-    port.write(JSON.stringify(configForDevice) + '\n');
-    port.write('END\n');
+    await window.serialFileIO.writeFile(
+      port,
+      'config.json',
+      JSON.stringify(configForDevice),
+      15000
+    );
+
+    if (!connectedPort) {
+      connectedPort = port;
+    }
 
     showToast('Config applied and saved ✅ (device will reboot)', 'success');
     configDirty = false;
@@ -4724,8 +4899,36 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     }, 500);
   } catch (err) {
     console.error('[DEBUG][apply-config] Failed to apply config:', err);
+    const errorMessage = String(err?.message || err || 'Unknown error');
+
+    // On flaky serial links the device can finish writing then reboot before ACK is fully read.
+    // If this was a timeout, verify by reading config.json back before declaring failure.
+    if (/timeout writing file:\s*config\.json/i.test(errorMessage) && configForDevice) {
+      try {
+        console.warn('[DEBUG][apply-config] Write timed out, attempting post-timeout verification readback...');
+        await new Promise(resolve => setTimeout(resolve, 400));
+        const verifyRead = await window.serialFileIO.readFile('config.json', 10000);
+        const verifiedConfig = typeof verifyRead === 'string' ? JSON.parse(verifyRead) : verifyRead;
+        const writeVerified = JSON.stringify(verifiedConfig) === JSON.stringify(configForDevice);
+
+        if (writeVerified) {
+          console.warn('[DEBUG][apply-config] Timeout recovery: config verified on device, continuing reboot flow');
+          showToast('Config write verified after timeout ✅ (device will reboot)', 'success');
+          configDirty = false;
+          document.getElementById('apply-config-btn').style.display = 'none';
+          setTimeout(() => {
+            showToast('Device rebooting to apply configuration', 'info');
+            rebootAndReload('config.json');
+          }, 500);
+          return;
+        }
+      } catch (verifyErr) {
+        console.warn('[DEBUG][apply-config] Timeout recovery verification failed:', verifyErr);
+      }
+    }
+
     showToast('Failed to write config', 'error');
-    customAlert('Failed to write config to device. See console for details.');
+    customAlert(`Failed to write config to device.\n\n${errorMessage}`);
   }
 });
 
@@ -4941,7 +5144,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     }
   });
 
-  document.getElementById('toggle-hat-mode-btn')?.addEventListener('click', () => {
+  document.getElementById('toggle-hat-mode-btn')?.addEventListener('click', async () => {
     closeConfigMenu();
     if (!connectedPort || !originalConfig) {
       updateStatus("Device not connected or config missing", false);
@@ -4954,9 +5157,12 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     originalConfig.hat_mode = next;
 
     try {
-      connectedPort.write("WRITEFILE:config.json\n");
-      connectedPort.write(JSON.stringify(originalConfig) + "\n");
-      connectedPort.write("END\n");
+      await window.serialFileIO.writeFile(
+        connectedPort,
+        'config.json',
+        JSON.stringify(originalConfig),
+        15000
+      );
       showToast(`Switched hat_mode to ${next} ✅`, 'success');
       
       // Update button text immediately
@@ -4973,7 +5179,7 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
     }
   });
 
-  document.getElementById('toggle-tilt-wave-btn')?.addEventListener('click', () => {
+  document.getElementById('toggle-tilt-wave-btn')?.addEventListener('click', async () => {
     closeConfigMenu();
     if (!connectedPort || !originalConfig) {
       updateStatus("Device not connected or config missing", false);
@@ -4988,9 +5194,12 @@ document.getElementById('apply-config-btn')?.addEventListener('click', () => {
       // Update config directly without demo
       originalConfig.tilt_wave_enabled = next;
       
-      connectedPort.write("WRITEFILE:config.json\n");
-      connectedPort.write(JSON.stringify(originalConfig) + "\n");
-      connectedPort.write("END\n");
+      await window.serialFileIO.writeFile(
+        connectedPort,
+        'config.json',
+        JSON.stringify(originalConfig),
+        15000
+      );
       
       showToast(`Tilt wave effect ${next ? 'enabled' : 'disabled'} ✅`, 'success');
       updateTiltWaveButtonText();
@@ -8550,9 +8759,21 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize firmware updater and automatic updater
   let firmwareUpdater = null;
   let automaticUpdater = null;
+  const updaterState = window.__katasamUpdaterState || {
+    buttonsBound: false,
+    fullInitialized: false,
+    retryTimer: null,
+    retryCount: 0
+  };
+  window.__katasamUpdaterState = updaterState;
   
   // Wait for serial to be available
   const initializeUpdaters = () => {
+    if (updaterState.retryTimer) {
+      clearTimeout(updaterState.retryTimer);
+      updaterState.retryTimer = null;
+    }
+
     console.log("🔍 [App] initializeUpdaters() called");
     
     // Check if we have the classes and either window.serial or an active device with port
@@ -8570,7 +8791,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // FORCE BUTTON SETUP REGARDLESS OF CONDITIONS
     console.log("� [App] FORCING button setup regardless of serial conditions...");
     
-    if (updateButton) {
+    if (!updaterState.buttonsBound && updateButton) {
       console.log("🔧 [App] Setting up check-for-updates button...");
       // Clear any existing event listeners by cloning the node
       let targetButton = updateButton;
@@ -8613,11 +8834,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
       console.log("✅ [App] Event listener added to check-for-updates button");
-    } else {
+    } else if (!updaterState.buttonsBound) {
       console.log("❌ [App] check-for-updates button not found!");
     }
     
-    if (refreshButton) {
+    if (!updaterState.buttonsBound && refreshButton) {
       console.log("🔧 [App] Setting up refresh-device-version button...");
       // Clear any existing event listeners by cloning the node
       if (refreshButton.parentNode) {
@@ -8658,9 +8879,19 @@ document.addEventListener('DOMContentLoaded', () => {
       } else {
         console.log("❌ [App] refresh-device-version button has no parent node!");
       }
-    } else {
+    } else if (!updaterState.buttonsBound) {
       console.log("❌ [App] refresh-device-version button not found!");
-    }    if (typeof FirmwareUpdater !== 'undefined' && typeof AutomaticFirmwareUpdater !== 'undefined' && hasSerial) {
+    }
+
+    if (!updaterState.buttonsBound) {
+      updaterState.buttonsBound = true;
+    }
+
+    if (updaterState.fullInitialized) {
+      return;
+    }
+
+    if (typeof FirmwareUpdater !== 'undefined' && typeof AutomaticFirmwareUpdater !== 'undefined' && hasSerial) {
       console.log("🚀 Initializing firmware update system...");
       
       // Set up window.serial if not already available
@@ -8681,6 +8912,8 @@ document.addEventListener('DOMContentLoaded', () => {
       // Make instances available globally for debugging
       window.firmwareUpdater = firmwareUpdater;
       window.automaticUpdater = automaticUpdater;
+      updaterState.fullInitialized = true;
+      updaterState.retryCount = 0;
       
       console.log("✅ Firmware update system initialized");
       
@@ -8688,14 +8921,15 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log("⚠️ [App] Not all conditions met for full initialization, but buttons are set up");
       
       // Still try to create instances even without full conditions
-      if (typeof AutomaticFirmwareUpdater !== 'undefined') {
+      if (typeof AutomaticFirmwareUpdater !== 'undefined' && !window.automaticUpdater) {
         window.automaticUpdater = new AutomaticFirmwareUpdater();
         console.log("✅ Created AutomaticFirmwareUpdater instance for button testing");
       }
       
       // Retry in 1 second if dependencies aren't ready, but stay quiet during BOOTSEL flashing.
-      if (!bootselPrompted && !isFlashingFirmware) {
-        setTimeout(initializeUpdaters, 1000);
+      if (!bootselPrompted && !isFlashingFirmware && updaterState.retryCount < 5) {
+        updaterState.retryCount += 1;
+        updaterState.retryTimer = setTimeout(initializeUpdaters, 1000);
       }
     }
   };
@@ -8706,6 +8940,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Also initialize when device connects
   window.addEventListener('deviceConnected', () => {
     console.log("🔌 Device connected, re-checking automatic updater...");
+    updaterState.retryCount = 0;
     setTimeout(initializeUpdaters, 500);
     
     // Update menu button texts when device connects

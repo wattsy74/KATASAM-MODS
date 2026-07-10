@@ -44,7 +44,7 @@ for entry in "${variants[@]}"; do
   suffix="${entry##*:}"
   out_path="${UF2_BASE}-${suffix}.uf2"
 
-  cargo build --release --target "${TARGET}" --no-default-features --features "${feature}"
+  cargo build --release --target "${TARGET}" --no-default-features --features "${feature} v2-analog"
 
   if [[ ! -f "${ELF_PATH}" ]]; then
     echo "expected ELF not found: ${ELF_PATH}" >&2
