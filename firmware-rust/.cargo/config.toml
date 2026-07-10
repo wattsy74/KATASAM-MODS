@@ -1,0 +1,10 @@
+[target.thumbv6m-none-eabi]
+# Optional: install probe-rs and adjust chip if your probe workflow differs.
+runner = "probe-rs run --chip RP2040"
+
+[alias]
+# Use this alias for embedded checks without forcing the whole workspace target.
+check-embedded = "check --target thumbv6m-none-eabi"
+
+[term]
+verbose = false

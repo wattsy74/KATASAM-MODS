@@ -1,0 +1,11 @@
+[package]
+name = "config-runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+config-protocol = { path = "../config-protocol" }
+serde_json = "1"
+
+[lib]
+path = "src/lib.rs"

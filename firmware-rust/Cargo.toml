@@ -1,0 +1,19 @@
+[workspace]
+members = [
+  "crates/firmware-core",
+  "crates/config-protocol",
+  "crates/config-runtime",
+  "crates/platform-profiles",
+  "crates/board-rp2040",
+  "app/main",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["KATASAM"]
+
+[workspace.metadata.katasam]
+branch = "firmware-rebuild-native-xbox-ps-support"
+goal = "Rust migration with configurator parity before console profiles"

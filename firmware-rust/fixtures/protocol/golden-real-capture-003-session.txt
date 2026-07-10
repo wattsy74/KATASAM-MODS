@@ -1,0 +1,13 @@
+ACK: READY?
+FIRMWARE_READY:OK
+ERROR: Invalid user_presets.json structure, merge rejected
+WRITEFILE:READY:capture3.txt
+File //updates/capture3.txt written
+ACK: READFILE:/updates/ca
+START_capture3.txt
+line-one
+line-two
+END_capture3.txt
+ACK: MKDIR:/updates
+MKDIR:SUCCESS:/updates
+ERROR: Unknown command

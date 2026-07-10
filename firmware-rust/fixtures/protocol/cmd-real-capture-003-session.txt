@@ -1,0 +1,11 @@
+READY?
+IMPORTUSER
+{"bad":123}
+END
+WRITEFILE:/updates/capture3.txt
+line-one
+line-two
+END
+READFILE:/updates/capture3.txt
+MKDIR:/updates
+UNKNOWN_CMD

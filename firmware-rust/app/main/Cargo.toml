@@ -1,0 +1,11 @@
+[package]
+name = "katasam-firmware-main"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+firmware-core = { path = "../../crates/firmware-core" }
+platform-profiles = { path = "../../crates/platform-profiles" }
+config-protocol = { path = "../../crates/config-protocol" }
+config-runtime = { path = "../../crates/config-runtime" }
+serde_json = "1"

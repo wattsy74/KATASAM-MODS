@@ -1,0 +1,27 @@
+ACK: READY?
+FIRMWARE_READY:OK
+ACK: READVERSION
+VERSION:5.0.2
+END
+ACK: READDEVICENAME
+KATASAM Controller
+END
+ACK: READUID
+E663A0079B79B528
+END
+ACK: READFILE:/config.jso
+START_config.json
+{"released_color": ["#454545", "#454545", "#521C00", "#000091", "#696B00", "#8C0009", "#003D00"], "tilt_wave_enabled": true, "joystick_y_pin": "GP27", "STRUM_UP": "GP15", "YELLOW_FRET_led": 4, "BLUE_FRET_led": 3, "START": "GP0", "TILT": "GP12", "whammy_max": 65000, "LEFT": "GP9", "GUIDE": "GP7", "UP": "GP11", "STRUM_DOWN_led": 1, "WHAMMY": "GP29", "BLUE_FRET": "GP5", "ORANGE_FRET": "GP6", "STRUM_UP_led": 0, "DOWN": "GP10", "neopixel_pin": "GP13", "RED_FRET_led": 5, "hat_mode": "dpad", "RIGHT": "GP8", "GREEN_FRET_led": 6, "RED_FRET": "GP3", "ORANGE_FRET_led": 2, "GREEN_FRET": "GP2", "STRUM_DOWN": "GP14", "joystick_x_pin": "GP26", "YELLOW_FRET": "GP4", "whammy_reverse": false, "device_name": "KATASAM Controller", "_metadata": {"description": "KATASAM Controller Configuration", "lastUpdated": "2025-08-13", "version": "3.9.26"}, "SELECT": "GP1", "whammy_min": 500, "led_color": ["#FFFFFF", "#FFFFFF", "#FF4D00", "#0000FF", "#FFFF00", "#FF0000", "#00FF00"], "led_brightness": 1}END_config.json
+ACK: READFILE:/user_prese
+START_user_presets.json
+{"User 3": {"red-fret-pressed": "#FFFF00", "strum-up-released": "#696B00", "strum-down-active": "#FFFF00", "orange-fret-pressed": "#FFFF00", "orange-fret-released": "#696B00", "red-fret-released": "#696B00", "blue-fret-pressed": "#FFFF00", "yellow-fret-pressed": "#FFFF00", "yellow-fret-released": "#696B00", "green-fret-released": "#696B00", "strum-up-active": "#FFFF00", "strum-down-released": "#696B00", "green-fret-pressed": "#FFFF00", "blue-fret-released": "#696B00"}, "User 1": {"red-fret-pressed": "#00FF00", "strum-up-released": "#003D00", "strum-down-active": "#00FF00", "orange-fret-pressed": "#00FF00", "orange-fret-released": "#003D00", "red-fret-released": "#003D00", "blue-fret-pressed": "#00FF00", "yellow-fret-pressed": "#00FF00", "yellow-fret-released": "#003D00", "green-fret-released": "#003D00", "strum-up-active": "#00FF00", "strum-down-released": "#003D00", "green-fret-pressed": "#00FF00", "blue-fret-released": "#003D00"}, "User 4": {"red-fret-pressed": "#0000FF", "strum-up-released": "#000091", "strum-down-active": "#0000FF", "orange-fret-pressed": "#0000FF", "orange-fret-released": "#000091", "red-fret-released": "#000091", "blue-fret-pressed": "#0000FF", "yellow-fret-pressed": "#0000FF", "yellow-fret-released": "#000091", "green-fret-released": "#000091", "strum-up-active": "#0000FF", "strum-down-released": "#000091", "green-fret-pressed": "#0000FF", "blue-fret-released": "#000091"}, "User 2": {"red-fret-pressed": "#FF0000", "strum-up-released": "#3D0000", "strum-down-active": "#FF0000", "orange-fret-pressed": "#FF0000", "orange-fret-released": "#3D0000", "red-fret-released": "#3D0000", "blue-fret-pressed": "#FF0000", "yellow-fret-pressed": "#FF0000", "yellow-fret-released": "#3D0000", "green-fret-released": "#3D0000", "strum-up-active": "#FF0000", "strum-down-released": "#3D0000", "green-fret-pressed": "#FF0000", "blue-fret-released": "#3D0000"}, "User 5": {"red-fret-pressed": "#FF4D00", "strum-up-released": "#521C00", "strum-down-active": "#FF4D00", "orange-fret-pressed": "#FF4D00", "orange-fret-released": "#521C00", "red-fret-released": "#521C00", "blue-fret-pressed": "#FF4D00", "yellow-fret-pressed": "#FF4D00", "yellow-fret-released": "#521C00", "green-fret-released": "#521C00", "strum-up-active": "#FF4D00", "strum-down-released": "#521C00", "green-fret-pressed": "#FF4D00", "blue-fret-released": "#521C00"}, "User 6": {"red-fret-pressed": "#FFFFFF", "strum-up-released": "#524B51", "strum-down-active": "#FFFFFF", "orange-fret-pressed": "#FFFFFF", "orange-fret-released": "#524B51", "red-fret-released": "#524B51", "blue-fret-pressed": "#FFFFFF", "yellow-fret-pressed": "#FFFFFF", "yellow-fret-released": "#524B51", "green-fret-released": "#524B51", "strum-up-active": "#FFFFFF", "strum-down-released": "#524B51", "green-fret-pressed": "#FFFFFF", "blue-fret-released": "#524B51"}}
+END_user_presets.json
+ACK: READWHAMMY
+WHAMMY:304
+ACK: READJOYSTICK
+JOYSTICK:X:10706:Y:14419
+ACK: READPIN:GREEN_FRET
+PIN:GREEN_FRET:0
+ACK: MKDIR:/updates
+MKDIR:SUCCESS:/updates
+ERROR: Unknown command
