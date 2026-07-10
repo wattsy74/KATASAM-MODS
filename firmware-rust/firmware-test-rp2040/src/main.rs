@@ -40,10 +40,6 @@ compile_error!("One boot2 feature must be selected");
 const USB_VID: u16 = 0x2E8A;
 const USB_PID: u16 = 0x1031;
 const REPORT_INTERVAL_US: u64 = 8_000;
-#[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-const ENABLE_ANALOG_COMMAND: &[u8] = b"ENABLE_ANALOG";
-#[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-const DISABLE_ANALOG_COMMAND: &[u8] = b"DISABLE_ANALOG";
 
 #[gen_hid_descriptor(
     (collection = APPLICATION, usage_page = GENERIC_DESKTOP, usage = GAMEPAD) = {
@@ -59,6 +55,12 @@ const DISABLE_ANALOG_COMMAND: &[u8] = b"DISABLE_ANALOG";
         (usage_page = GENERIC_DESKTOP, usage = Y) = {
             #[item_settings data,variable,absolute] y=input;
         };
+        (usage_page = GENERIC_DESKTOP, usage = Z) = {
+            #[item_settings data,variable,absolute] z=input;
+        };
+        (usage_page = GENERIC_DESKTOP, usage = WHEEL) = {
+            #[item_settings data,variable,absolute] wheel=input;
+        };
     }
 )]
 pub struct GamepadReport {
@@ -66,11 +68,19 @@ pub struct GamepadReport {
     pub buttons_hi: u8,
     pub x: i8,
     pub y: i8,
+    pub z: u8,
+    pub wheel: i8,
 }
 
 #[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-fn axis_from_adc(raw: u16) -> i8 {
-    // RP2040 ADC is 12-bit (0..4095). Map to signed HID axis (-127..127).
+fn axis_from_adc_u8(raw: u16) -> u8 {
+    // RP2040 ADC is 12-bit (0..4095). Map to unsigned HID axis (0..255).
+    ((raw as u32 * 255) / 4095) as u8
+}
+
+#[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
+fn axis_from_adc_i8(raw: u16) -> i8 {
+    // Mirror the same source on a signed axis for host/game compatibility.
     let centered = ((raw as i32 * 255) / 4095) - 127;
     centered.clamp(-127, 127) as i8
 }
@@ -88,22 +98,6 @@ fn maybe_enter_bootsel(line: &[u8]) {
     if is_bootsel_command(line) {
         hal::rom_data::reset_to_usb_boot(0, 0);
     }
-}
-
-#[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-fn trim_ascii(input: &[u8]) -> &[u8] {
-    let mut start = 0;
-    let mut end = input.len();
-
-    while start < end && matches!(input[start], b'\r' | b'\n' | b' ' | b'\t') {
-        start += 1;
-    }
-
-    while end > start && matches!(input[end - 1], b'\r' | b'\n' | b' ' | b'\t') {
-        end -= 1;
-    }
-
-    &input[start..end]
 }
 
 #[link_section = ".boot2"]
@@ -168,11 +162,7 @@ fn main() -> ! {
     let start = pins.gpio0.into_pull_up_input();
 
     #[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-    let mut whammy_pin = Some(pins.gpio29.into_floating_input());
-    #[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-    let mut whammy_adc = None;
-    #[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-    let mut analog_enabled = false;
+    let mut whammy_adc = AdcPin::new(pins.gpio29.into_floating_input()).ok();
 
     let mut watchdog = Watchdog::new(pac.WATCHDOG);
     let clocks = init_clocks_and_plls(
@@ -229,23 +219,6 @@ fn main() -> ! {
                                 let line = &line_buf[..line_len];
                                 maybe_enter_bootsel(line);
 
-                                #[cfg(all(not(feature = "rescue-mode"), feature = "v2-analog"))]
-                                {
-                                    let cmd = trim_ascii(line);
-                                    if cmd.eq_ignore_ascii_case(ENABLE_ANALOG_COMMAND) {
-                                        analog_enabled = true;
-                                        if whammy_adc.is_none() {
-                                            if let Some(pin) = whammy_pin.take() {
-                                                if let Ok(adc_pin) = AdcPin::new(pin) {
-                                                    whammy_adc = Some(adc_pin);
-                                                }
-                                            }
-                                        }
-                                    } else if cmd.eq_ignore_ascii_case(DISABLE_ANALOG_COMMAND) {
-                                        analog_enabled = false;
-                                    }
-                                }
-
                                 line_len = 0;
                             }
                             continue;
@@ -271,6 +244,8 @@ fn main() -> ! {
                     buttons_hi: 0,
                     x: ((phase as i16) - 128) as i8,
                     y: (127 - phase as i16) as i8,
+                    z: 0,
+                    wheel: 0,
                 };
                 let _ = hid.push_input(&report);
                 next_report_at = now + REPORT_INTERVAL_US;
@@ -345,28 +320,37 @@ fn main() -> ! {
                 buttons_hi |= 1 << 6; // button 15
             }
 
+            let y_axis = axis_from_dpad(dpad_up_pressed, dpad_down_pressed);
+
             #[cfg(feature = "v2-analog")]
-            let mut y_axis = axis_from_dpad(dpad_up_pressed, dpad_down_pressed);
+            let mut z_axis: u8 = 0;
+
+            #[cfg(feature = "v2-analog")]
+            let mut wheel_axis: i8 = 0;
 
             #[cfg(feature = "v2-analog")]
             {
-                if analog_enabled {
-                    if let Some(ref mut whammy_channel) = whammy_adc {
-                        if let Ok(whammy_raw) = adc.read(whammy_channel) {
-                            y_axis = axis_from_adc(whammy_raw);
-                        }
+                if let Some(ref mut whammy_channel) = whammy_adc {
+                    if let Ok(whammy_raw) = adc.read(whammy_channel) {
+                        z_axis = axis_from_adc_u8(whammy_raw);
+                        wheel_axis = axis_from_adc_i8(whammy_raw);
                     }
                 }
             }
 
             #[cfg(not(feature = "v2-analog"))]
-            let y_axis = axis_from_dpad(dpad_up_pressed, dpad_down_pressed);
+            let z_axis: u8 = 0;
+
+            #[cfg(not(feature = "v2-analog"))]
+            let wheel_axis: i8 = 0;
 
             let report = GamepadReport {
                 buttons_lo,
                 buttons_hi,
                 x: axis_from_dpad(dpad_left_pressed, dpad_right_pressed),
                 y: y_axis,
+                z: z_axis,
+                wheel: wheel_axis,
             };
 
             let _ = hid.push_input(&report);
