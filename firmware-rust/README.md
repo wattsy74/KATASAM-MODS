@@ -81,7 +81,15 @@ cd firmware-rust
 ```
 
 Output:
-- `dist/katasam-rp2040-test-fw.uf2`
+- `dist/katasam-rp2040-test-fw-w25q080.uf2` (default copy target)
+- `dist/katasam-rp2040-test-fw-is25lp080.uf2`
+- `dist/katasam-rp2040-test-fw-generic03h.uf2`
+- `dist/katasam-rp2040-test-fw.uf2` (copied from `-w25q080`)
+
+If a board immediately returns to BOOTSEL after flashing, try the boot2 variants in this order:
+1. `katasam-rp2040-test-fw-w25q080.uf2`
+2. `katasam-rp2040-test-fw-is25lp080.uf2`
+3. `katasam-rp2040-test-fw-generic03h.uf2`
 
 Behavior in this test firmware:
 - Enumerates as a USB HID gamepad and continuously streams changing XY/button reports.
@@ -94,7 +102,22 @@ cd firmware-rust
 python3 scripts/enter_bootsel.py --port /dev/cu.usbmodemXXXX
 ```
 
-If `--port` is omitted, the script uses the first `/dev/cu.usbmodem*` device found.
+If `--port` is omitted, the script auto-detects serial devices and prefers the test firmware VID/PID.
+The default command sent is `KATASAM_BOOTSEL_V1`.
+
+List candidate serial ports:
+
+```bash
+cd firmware-rust
+python3 scripts/enter_bootsel.py --list-ports
+```
+
+For older test firmware builds that still use legacy command tokens:
+
+```bash
+cd firmware-rust
+python3 scripts/enter_bootsel.py --port /dev/cu.usbmodemXXXX --command BOOTSEL
+```
 
 Quick HID stream verification after flashing:
 

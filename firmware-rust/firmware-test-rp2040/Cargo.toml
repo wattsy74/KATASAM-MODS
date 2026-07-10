@@ -4,10 +4,18 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 
+[features]
+default = ["boot2-w25q080"]
+boot2-w25q080 = []
+boot2-is25lp080 = []
+boot2-generic-03h = []
+rescue-mode = []
+
 [dependencies]
 board-rp2040 = { path = "../crates/board-rp2040" }
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
+embedded-hal = "0.2.7"
 panic-halt = "0.2"
 rp2040-hal = { version = "0.11", features = ["rt", "critical-section-impl"] }
 rp2040-boot2 = "0.3"

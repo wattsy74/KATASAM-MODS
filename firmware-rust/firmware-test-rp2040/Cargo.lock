@@ -283,6 +283,7 @@ dependencies = [
  "board-rp2040",
  "cortex-m",
  "cortex-m-rt",
+ "embedded-hal 0.2.7",
  "panic-halt",
  "rp2040-boot2",
  "rp2040-hal",

@@ -17,8 +17,8 @@ impl Rp2040Board {
     }
 }
 
-pub const BOOTSEL_COMMAND: &[u8] = b"BOOTSEL";
-pub const REBOOT_BOOTSEL_COMMAND: &[u8] = b"REBOOT_BOOTSEL";
+pub const BOOTSEL_COMMAND: &[u8] = b"KATASAM_BOOTSEL_V1";
+pub const REBOOT_BOOTSEL_COMMAND: &[u8] = b"KATASAM_REBOOT_BOOTSEL_V1";
 
 pub fn is_bootsel_command(line: &[u8]) -> bool {
     let trimmed = trim_ascii(line);
@@ -47,9 +47,10 @@ mod tests {
 
     #[test]
     fn matches_bootsel_variants() {
-        assert!(is_bootsel_command(b"BOOTSEL"));
-        assert!(is_bootsel_command(b"bootsel\n"));
-        assert!(is_bootsel_command(b"  REBOOT_BOOTSEL\r\n"));
+        assert!(is_bootsel_command(b"KATASAM_BOOTSEL_V1"));
+        assert!(is_bootsel_command(b"katasam_bootsel_v1\n"));
+        assert!(is_bootsel_command(b"  KATASAM_REBOOT_BOOTSEL_V1\r\n"));
+        assert!(!is_bootsel_command(b"BOOTSEL"));
         assert!(!is_bootsel_command(b"noop"));
     }
 }
