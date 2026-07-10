@@ -8,6 +8,7 @@ Branch: firmware-rebuild-native-xbox-ps-support
 - [x] Prepare capture guide and artifact folders
 - [x] Scaffold HID fixture files and validation script
 - [x] Capture HID descriptor/report bytes from current CircuitPython firmware
+- [x] Add HID fixture analysis tooling and CI checks
 - [ ] Capture full configurator serial command/response traces
 - [ ] Freeze golden trace files in repo
 
