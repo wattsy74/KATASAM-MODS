@@ -10,6 +10,7 @@ boot2-w25q080 = []
 boot2-is25lp080 = []
 boot2-generic-03h = []
 rescue-mode = []
+v2-analog = []
 
 [dependencies]
 board-rp2040 = { path = "../crates/board-rp2040" }

@@ -127,3 +127,24 @@ python3 scripts/verify_hid_stream.py --vid 0x2E8A --pid 0x1031 --duration 5
 ```
 
 The verifier checks report count, uniqueness, and per-byte activity thresholds and returns non-zero on failure.
+
+Current V2 analog test target uses whammy-only analog input on `GP29` and does not require joystick channels.
+
+In `v2-analog` builds, analog is intentionally disabled at boot for safety.
+Use the CDC serial channel to toggle it after USB is confirmed alive:
+
+```bash
+# Enable whammy analog path
+python3 - <<'PY'
+import serial
+with serial.Serial('/dev/cu.usbmodemTEST_00011', 115200, timeout=0.2) as s:
+   s.write(b'ENABLE_ANALOG\n')
+PY
+
+# Disable whammy analog path
+python3 - <<'PY'
+import serial
+with serial.Serial('/dev/cu.usbmodemTEST_00011', 115200, timeout=0.2) as s:
+   s.write(b'DISABLE_ANALOG\n')
+PY
+```

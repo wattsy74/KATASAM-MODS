@@ -58,6 +58,17 @@ done
 cp -f "${UF2_BASE}-w25q080.uf2" "${UF2_BASE}.uf2"
 echo "Default UF2 symlink copy updated: ${UF2_BASE}.uf2 -> ${UF2_BASE}-w25q080.uf2"
 
+digital_path="${DIST_DIR}/katasam-rp2040-v2-digital-w25q080.uf2"
+cargo build --release --target "${TARGET}" --no-default-features --features "boot2-w25q080"
+
+if [[ ! -f "${ELF_PATH}" ]]; then
+  echo "expected ELF not found: ${ELF_PATH}" >&2
+  exit 1
+fi
+
+elf2uf2-rs "${ELF_PATH}" "${digital_path}"
+echo "UF2 generated: ${digital_path}"
+
 rescue_path="${DIST_DIR}/katasam-rp2040-rescue-w25q080.uf2"
 cargo build --release --target "${TARGET}" --no-default-features --features "boot2-w25q080 rescue-mode"
 
