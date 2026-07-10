@@ -1,0 +1,31 @@
+name: Protocol Parity
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - firmware-rebuild-native-xbox-ps-support
+
+jobs:
+  parity:
+    name: Rust protocol parity checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware-rust
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test config runtime
+        run: cargo test -p config-runtime
+
+      - name: Check app crate
+        run: cargo check -p katasam-firmware-main
+
+      - name: Replay all real-capture fixtures
+        run: ./scripts/replay_all_real_capture_fixtures.sh
