@@ -5,3 +5,10 @@
 
 # Local debug scratch files
 console-paste
+
+# Rust workspace build artifacts
+firmware-rust/target/
+
+# Generated protocol replay outputs
+firmware-rust/fixtures/protocol/out-*-session.txt
+firmware-rust/fixtures/protocol/diff-*-session.txt
