@@ -1,0 +1,20 @@
+ACK: READY?
+FIRMWARE_READY:OK
+ACK: READVERSION
+VERSION:0.1.0
+END
+ACK: READUID
+RUSTSIM-0001
+END
+WRITEFILE:READY:config.json
+File /config.json written (atomic)
+ACK: READDEVICENAME
+KATASAM Gold
+END
+ACK: READFILE:/config.jso
+START_config.json
+{"device_name":"KATASAM Gold"}
+END_config.json
+ERROR: Unknown command
+ACK: MKDIR:/updates
+MKDIR:SUCCESS:/updates

@@ -1,0 +1,8 @@
+READFILE:/missing.json
+WRITEFILE:/user_presets.json
+{"bad":123}
+END
+IMPORTUSER
+{"bad":123}
+END
+MKDIR:

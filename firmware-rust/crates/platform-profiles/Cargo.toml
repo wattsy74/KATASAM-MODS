@@ -1,0 +1,10 @@
+[package]
+name = "platform-profiles"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+firmware-core = { path = "../firmware-core" }
+
+[lib]
+path = "src/lib.rs"

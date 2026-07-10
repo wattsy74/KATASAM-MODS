@@ -1,0 +1,10 @@
+READY?
+READVERSION
+READUID
+WRITEFILE:/config.json
+{"device_name":"KATASAM Gold"}
+END
+READDEVICENAME
+READFILE:/config.json
+UNKNOWN_CMD
+MKDIR:/updates
