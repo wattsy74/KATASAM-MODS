@@ -54,3 +54,18 @@ cd firmware-rust
 ```
 
 See `fixtures/protocol/REAL_CAPTURE_WORKFLOW.md` for naming and intake steps.
+
+## HID Capture Workflow
+
+HID parity is tracked with fixture files under `fixtures/hid/`.
+
+Run the fixture presence/data check:
+
+```bash
+cd firmware-rust
+python3 -m pip install --user hid
+./scripts/capture_hid_fixtures.py --vid 0x6997 --pid 0xB528
+./scripts/check_hid_fixtures.sh
+```
+
+See `fixtures/hid/HID_CAPTURE_WORKFLOW.md` for capture expectations.
