@@ -6,7 +6,8 @@ Branch: firmware-rebuild-native-xbox-ps-support
 ## Phase 0 - Capture Baseline
 
 - [x] Prepare capture guide and artifact folders
-- [ ] Capture HID descriptor/report bytes from current CircuitPython firmware
+- [x] Scaffold HID fixture files and validation script
+- [x] Capture HID descriptor/report bytes from current CircuitPython firmware
 - [ ] Capture full configurator serial command/response traces
 - [ ] Freeze golden trace files in repo
 
