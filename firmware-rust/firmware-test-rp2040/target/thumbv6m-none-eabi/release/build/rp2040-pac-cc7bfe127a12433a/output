@@ -1,3 +1,0 @@
-cargo:rustc-link-search=/Users/martynwatts/Documents/GitHub/KATASAM-MODS/firmware-rust/firmware-test-rp2040/target/thumbv6m-none-eabi/release/build/rp2040-pac-cc7bfe127a12433a/out
-cargo:rerun-if-changed=device.x
-cargo:rerun-if-changed=build.rs

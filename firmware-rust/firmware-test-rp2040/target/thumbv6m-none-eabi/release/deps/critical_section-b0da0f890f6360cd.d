@@ -1,9 +1,0 @@
-/Users/martynwatts/Documents/GitHub/KATASAM-MODS/firmware-rust/firmware-test-rp2040/target/thumbv6m-none-eabi/release/deps/critical_section-b0da0f890f6360cd.d: /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/lib.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/mutex.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/../README.md
-
-/Users/martynwatts/Documents/GitHub/KATASAM-MODS/firmware-rust/firmware-test-rp2040/target/thumbv6m-none-eabi/release/deps/libcritical_section-b0da0f890f6360cd.rlib: /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/lib.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/mutex.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/../README.md
-
-/Users/martynwatts/Documents/GitHub/KATASAM-MODS/firmware-rust/firmware-test-rp2040/target/thumbv6m-none-eabi/release/deps/libcritical_section-b0da0f890f6360cd.rmeta: /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/lib.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/mutex.rs /Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/../README.md
-
-/Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/lib.rs:
-/Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/mutex.rs:
-/Users/martynwatts/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/critical-section-1.2.0/src/../README.md:
