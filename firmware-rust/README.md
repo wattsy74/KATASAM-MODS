@@ -45,3 +45,12 @@ Fixtures:
 - Commands: `fixtures/protocol/cmd-*-session.txt`
 - Expected output: `fixtures/protocol/golden-*-session.txt`
 - Actual output: `fixtures/protocol/out-*-session.txt`
+
+For real hardware captures, use:
+
+```bash
+cd firmware-rust
+./scripts/replay_real_capture_fixture.sh capture-001
+```
+
+See `fixtures/protocol/REAL_CAPTURE_WORKFLOW.md` for naming and intake steps.

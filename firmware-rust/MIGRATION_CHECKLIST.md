@@ -30,6 +30,7 @@ Branch: firmware-rebuild-native-xbox-ps-support
 - [x] Add golden protocol session for failure/error-path command handling
 - [x] Add app-level line-based protocol transport adapter (stdio bridge)
 - [x] Add automated fixture replay script for parity checks against stdio bridge
+- [x] Prepare first real-capture fixture placeholders and intake workflow
 - [ ] Implement full command coverage from current serial handler
 - [ ] Implement safe config read/write with atomic persistence
 - [ ] Verify configurator core flows pass

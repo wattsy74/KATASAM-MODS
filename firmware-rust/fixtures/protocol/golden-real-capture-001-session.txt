@@ -1,0 +1,4 @@
+# Replace this file with captured baseline output from current CircuitPython firmware.
+# Keep exact line ordering and text, including ACK/END markers.
+# Then run:
+# ./scripts/replay_real_capture_fixture.sh capture-001

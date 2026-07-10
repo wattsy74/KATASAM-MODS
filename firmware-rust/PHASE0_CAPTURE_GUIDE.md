@@ -60,3 +60,14 @@ Recommended filenames:
 - Golden serial traces checked in for core command families
 - Golden HID traces checked in for required action matrix
 - Any ambiguities documented in `fixtures/KNOWN_GAPS.md`
+
+## Replay Integration
+
+After creating a real capture fixture pair, replay it against the Rust bridge:
+
+```bash
+cd firmware-rust
+./scripts/replay_real_capture_fixture.sh capture-001
+```
+
+Use `fixtures/protocol/REAL_CAPTURE_WORKFLOW.md` for fixture naming conventions.
